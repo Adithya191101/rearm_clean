@@ -6,3 +6,4 @@ patches/*.patch whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
 # GitHub's 100 MB per-file limit) and should never be treated as text diffs.
 *.mp4 binary
 *.jpg binary
+*.gif binary

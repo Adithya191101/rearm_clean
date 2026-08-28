@@ -30,9 +30,12 @@ the next engineering phase.
 
 ## Demonstration
 
-[![reArm B601-DM full-flow demonstration](media/rearm_b601dm_full_flow_preview.jpg)](media/rearm_b601dm_full_flow_demo.mp4)
+[![Autoplaying reArm B601-DM full-flow demonstration](media/rearm_b601dm_full_flow_inline.gif)](media/rearm_b601dm_full_flow_demo.mp4)
 
 **[Watch or download the full demonstration (MP4)](media/rearm_b601dm_full_flow_demo.mp4)**
+
+The animation above plays directly in the README at 2x speed without audio.
+Click it for the full-resolution, real-time H.264 recording.
 
 The edited 51-second, 1920x1080 demonstration shows the complete successful
 flow followed by a short development-bloopers section. In the successful run:
