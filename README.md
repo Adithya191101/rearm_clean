@@ -1,7 +1,5 @@
 # reArm B601-DM Isaac ROS Manipulation
 
-**Author:** [Adithya (`@Adithya191101`)](https://github.com/Adithya191101)
-
 A source-only adaptation of NVIDIA's
 [Isaac for Manipulation reference architecture](https://nvidia-isaac-ros.github.io/reference_workflows/isaac_for_manipulation/index.html)
 for the Seeed Studio
