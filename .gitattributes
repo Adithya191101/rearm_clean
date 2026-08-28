@@ -1,0 +1,8 @@
+# Unified diff context uses a single leading space for blank context lines.
+# Do not report those format markers as trailing whitespace in the patch file.
+patches/*.patch whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
+
+# Curated demonstration media are ordinary Git binary objects (well below
+# GitHub's 100 MB per-file limit) and should never be treated as text diffs.
+*.mp4 binary
+*.jpg binary

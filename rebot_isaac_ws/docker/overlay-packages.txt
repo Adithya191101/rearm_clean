@@ -1,0 +1,15 @@
+# Patched NVIDIA packages.
+isaac_ros_manipulation_bringup
+isaac_ros_manipulation_orchestration
+isaac_ros_manipulation_pick_and_place
+isaac_ros_manipulation_ros_python_utils
+isaac_ros_manipulation_test_utils
+
+# Project-owned reArm runtime packages.
+isaac_ros_manipulation_rebot_driver_utils
+isaac_ros_manipulation_rebot_robot_description
+rebot_b601dm_description
+rebot_b601dm_perception
+
+# Isaac Sim ros2_control transport.
+topic_based_ros2_control

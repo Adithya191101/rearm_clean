@@ -1,0 +1,68 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="rebot_b601dm">
+    <xacro:arg name="prefix" default="" />
+    <xacro:arg name="mesh_package" default="rebot_b601dm_description" />
+    <xacro:arg name="sim_isaac" default="false" />
+    <xacro:arg name="initial_positions_file"
+        default="$(find isaac_ros_manipulation_rebot_robot_description)/config/initial_positions.yaml"/>
+
+    <!-- Wrist camera extrinsic. Defaults are the sim profile values from
+         rebot_b601dm_description/urdf/rebot_b601dm_full.urdf.xacro. -->
+    <xacro:arg name="camera_mount_xyz" default="0.05 0 0.06" />
+    <xacro:arg name="camera_mount_rpy" default="0 0 0" />
+    <xacro:arg name="camera_link_xyz" default="0 0 0" />
+    <xacro:arg name="camera_link_rpy" default="0 0 0" />
+    <xacro:arg name="use_camera" default="true" />
+
+    <xacro:property name="initial_positions_file" default="$(arg initial_positions_file)"/>
+
+    <!-- Include the reBot macros (arm, gripper, wrist camera). Geometry, inertia and
+         joint limits live in rebot_b601dm_description so this package and the SDK
+         driver model cannot drift apart. -->
+    <xacro:include filename="$(find rebot_b601dm_description)/urdf/rebot_b601dm_arm.xacro" />
+    <xacro:include filename="$(find rebot_b601dm_description)/urdf/rebot_b601dm_gripper.xacro" />
+    <xacro:include filename="$(find rebot_b601dm_description)/urdf/rebot_b601dm_camera.xacro" />
+
+    <xacro:rebot_b601dm_arm prefix="$(arg prefix)" mesh_package="$(arg mesh_package)" />
+    <xacro:rebot_b601dm_gripper prefix="$(arg prefix)" mesh_package="$(arg mesh_package)" />
+
+    <!--
+      MoveIt's static-scene loader publishes .scene objects in "world". Make
+      that frame part of the robot model so collision objects are valid as soon
+      as the planning-scene subscriber starts; an external TF publisher can be
+      discovered too late and cause the first hard obstacle to be discarded.
+    -->
+    <link name="world" />
+    <joint name="$(arg prefix)world_to_base_link" type="fixed">
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <parent link="world" />
+        <child link="$(arg prefix)base_link" />
+    </joint>
+
+    <xacro:if value="$(arg use_camera)">
+        <xacro:rebot_b601dm_camera prefix="$(arg prefix)"
+            mount_xyz="$(arg camera_mount_xyz)"
+            mount_rpy="$(arg camera_mount_rpy)"
+            cam_xyz="$(arg camera_link_xyz)"
+            cam_rpy="$(arg camera_link_rpy)"
+            name="camera" />
+    </xacro:if>
+
+    <!--
+      No gripper_frame/grasp_frame/insertion_frame links are added here, unlike the
+      Flexiv reference. The reBot gripper macro already publishes gripper_link (body)
+      and gripper_tcp (grasp point), so ReBotDriverConfig points gripper_frame and
+      grasp_frame at those instead of creating duplicate coincident frames.
+
+      insertion_frame has no reBot equivalent and no measured offset, so it is not
+      invented here. Only the GEAR_ASSEMBLY workflow consumes it; that workflow will
+      fail a TF lookup on this robot until an insertion offset is authored.
+    -->
+
+    <!-- TopicBasedSystem ros2_control for Isaac Sim -->
+    <xacro:if value="$(arg sim_isaac)">
+        <xacro:include filename="$(find isaac_ros_manipulation_rebot_robot_description)/urdf/rebot_sim.ros2_control.xacro" />
+        <xacro:rebot_ros2_control name="rebot_ros2_control_sim"
+            initial_positions="${xacro.load_yaml(initial_positions_file)}"/>
+    </xacro:if>
+</robot>

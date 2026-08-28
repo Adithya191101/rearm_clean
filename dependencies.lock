@@ -1,0 +1,8 @@
+# name|url|revision|destination|sparse_path
+#
+# Destinations are relative to this repository. Empty sparse_path means a full
+# checkout. Every revision is immutable; do not replace one with a branch name.
+isaac_ros_manipulation|https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_manipulation.git|6ef8d72fee82f5aa0bae207962e9a17ff4306f90|rebot_isaac_ws/src/isaac_ros_manipulation|
+topic_based_ros2_control|https://github.com/karanchahal-nv/topic_based_ros2_control.git|7ee291ab13adba52ab5889deb9e520009fe2283d|rebot_isaac_ws/src/topic_based_ros2_control|
+rebot_arm_controller|https://github.com/Seeed-Projects/reBotArmController_ROS2.git|39fbea54c7235b1c38bd025fc2e7308e42bd2fbe|rebot_isaac_ws/.upstream/reBotArmController_ROS2|src/rebotarm_bringup/description/meshes_b601_gripper
+rebot_isaacsim|https://github.com/Seeed-Projects/reBot-Isaacsim.git|c3ee253ca113ea3514da442684ef5d4894219374|rebot_isaac_ws/.upstream/reBot-Isaacsim|usd/reBot_B601_DM

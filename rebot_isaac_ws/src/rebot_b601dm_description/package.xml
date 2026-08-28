@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>rebot_b601dm_description</name>
+  <version>0.1.0</version>
+  <description>
+    Canonical kinematic and collision model for the Seeed reBot Arm B601-DM with
+    the DM parallel-jaw gripper.
+
+    One xacro source generates two products from shared macros: the full planning
+    model (MoveIt, cuMotion, robot_state_publisher, USD import) and the 6-DoF SDK
+    driver model (Pinocchio nq == 6). Sharing the arm and wrist macros is what
+    keeps the two from drifting; the cross-model FK parity test in test/ is what
+    proves they have not.
+  </description>
+  <maintainer email="rebot-dev@example.invalid">reBot Isaac integration</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>urdf</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>joint_state_publisher</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>python3-pytest</test_depend>
+  <test_depend>python3-numpy</test_depend>
+  <!-- liburdfdom-tools provides check_urdf. -->
+  <test_depend>liburdfdom-tools</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

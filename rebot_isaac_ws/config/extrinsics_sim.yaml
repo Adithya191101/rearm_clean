@@ -1,0 +1,65 @@
+# Wrist camera extrinsics -- SIMULATION profile.
+#
+# These values are CHOSEN, not measured. In simulation we author the mount pose
+# and place the Isaac Sim camera prim at exactly the same transform, so the
+# extrinsic is exact by construction and has no error term. There is nothing to
+# calibrate here, and running a hand-eye procedure in sim would only re-derive
+# the number we typed in.
+#
+# The corresponding real-hardware file (extrinsics_real.yaml) is produced the
+# opposite way: hand-eye calibration MEASURES camera_link, and camera_mount is
+# back-computed from it. The two files are kept separate for exactly that reason
+# -- conflating "chosen" with "measured" is how a sim-only extrinsic silently
+# ends up on real hardware.
+#
+# CONSUMERS (all three must agree, or the collision picture is wrong):
+#   1. the URDF        -- rebot_b601dm_camera.xacro
+#   2. the USD         -- the Isaac Sim camera prim under /World/rebot/link6
+#   3. the XRDF        -- collision spheres covering the camera and its bracket
+#
+# The checked-in URDF, USD camera prim, and XRDF must be updated together. A
+# camera sphere left at the old pose either blocks valid plans or fails to guard
+# a real collision volume, and both failures are silent.
+
+profile: sim
+
+# T_link6_camera_mount -- the mechanical bracket on the wrist.
+# Chosen to put a wrist camera forward of and above the flange, looking along the
+# approach direction with the jaws in view.
+camera_mount:
+  parent: link6
+  child: camera_mount
+  xyz: [0.05, 0.0, 0.06]
+  rpy: [0.0, 0.0, 0.0]
+
+# T_mount_camera_link -- bracket to camera body frame.
+# Identity in sim: the camera prim is placed directly at the mount pose, so no
+# bracket-to-body offset exists. On real hardware this is where the physical
+# offset between the bracket face and the D435's body origin appears.
+camera_link:
+  parent: camera_mount
+  child: camera_link
+  xyz: [0.0, 0.0, 0.0]
+  rpy: [0.0, 0.0, 0.0]
+
+# Optical frame rotation is fixed by REP 145 (body X-fwd/Y-left/Z-up to optical
+# Z-fwd/X-right/Y-down) and is NOT a tunable. Recorded for completeness; the
+# xacro hard-codes it.
+optical_frame_rpy: [-1.5707963267948966, 0.0, -1.5707963267948966]
+
+# Sim camera intrinsics. D435-class colour stream. Isaac Sim's RTX camera is a
+# pinhole model with no distortion, so the intrinsics are derived exactly from
+# the resolution and horizontal FOV:
+#   fx = fy = (width / 2) / tan(HFOV / 2) = 640 / tan(34.7 deg) = 923.6
+intrinsics:
+  width: 1280
+  height: 720
+  fps: 30
+  hfov_deg: 69.4
+  fx: 923.6
+  fy: 923.6
+  cx: 640.0
+  cy: 360.0
+  distortion_model: plumb_bob
+  distortion_coeffs: [0.0, 0.0, 0.0, 0.0, 0.0]
+  optical_frame: camera_color_optical_frame

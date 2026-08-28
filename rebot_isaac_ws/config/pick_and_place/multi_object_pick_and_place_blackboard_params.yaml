@@ -1,0 +1,88 @@
+# reBot B601-DM blackboard for NVIDIA's /multi_object_pick_and_place tree.
+# SIM ONLY.
+#
+# FILENAME IS FIXED -- see the companion behaviour-tree params file.
+#
+# Keys upstream's BlackboardConfig.__init__ reads but which are ABSENT from BOTH
+# upstream YAMLs, and therefore silently default there, are set EXPLICITLY here:
+# object_frame_name, max_planning_tries, publish_grasp_poses. object_frame_name
+# matters most: its default is 'detected_object1', which resolves against nothing
+# in this scene.
+
+blackboard_params:
+  max_num_next_object: 2
+  # false: no RViz interactive-marker drop pose. The drop pose comes from the
+  # action goal. With true, the tree blocks for user_confirmation_timeout waiting
+  # on a marker whose mesh_resource_uri is deliberately empty for this robot.
+  use_drop_pose_from_rviz: false
+  abort_motion: false
+
+  # [x, y, z, qx, qy, qz, qw] -- xyzw, tf2/ROS order. NOT the wxyz order used by
+  # the isaac_grasp file and by USD. _create_pose_from_params raises ValueError
+  # unless there are exactly 7 elements.
+  # Matches rebot_sim_launch_params.yaml's home_pose for this arm.
+  home_pose: [-0.25, 0.2, 0.4, 0.034, 0.996, 0.066, 0.042]
+
+  # 0 = MultiObjectPickAndPlace.Goal.SINGLE_BIN.
+  #
+  # mode, target_poses and class_ids are INITIAL STATE ONLY:
+  # MultiObjectPickAndPlace.execute_callback overwrites all three from the goal
+  # before the tree ticks. They are left empty rather than pre-populated so the
+  # file does not read as though it configured the goal. (SINGLE_BIN goal
+  # validation requires exactly one target pose and an EMPTY class_ids at goal
+  # time; MULTI_BIN requires equal-length non-empty arrays with unique class_ids.)
+  mode: 0
+  target_poses: []
+  class_ids: []
+
+  selected_object_id: null
+  active_obj_id: null
+  goal_drop_pose: null
+  rviz_drop_pose: null
+  object_info_cache: null
+  next_object_id: []
+
+  # Canonical frame name assigned to the FoundationPose result. Upstream omits
+  # this key and defaults it to 'detected_object1'.
+  object_frame_name: 'soup_can'
+  # Upstream default is 3; 5 matches this robot's plan_to_grasp
+  # max_planning_retries and rebot_sim_launch_params.yaml's
+  # pick_and_place_planner_retries.
+  max_planning_tries: 5
+  publish_grasp_poses: true
+
+  # MultiObjectPickAndPlace.Result.UNKNOWN
+  workflow_status: 4
+  workflow_summary: ""
+
+  # ONE object. mac_and_cheese is dropped, following Flexiv's precedent: there is
+  # no reBot grasp set for it, and a supported_objects entry whose grasp_file_path
+  # does not exist fails at pick time rather than at load time.
+  #
+  # NOTE: SupportedObjectsConfig.from_dict re-keys this mapping BY class_id
+  # (supported_objects[obj.class_id] = obj), so two entries sharing a class_id
+  # silently collide and the second wins. bt_params.check_blackboard_params
+  # rejects a duplicate class_id for that reason.
+  supported_objects:
+    soup_can:
+      # Grounding DINO is open-vocabulary: it emits the PROMPT TEXT as the
+      # class_id ('soup can'), not a numeric id. FilterDetections keeps a
+      # detection only if str(class_id) is in supported_class_ids, and the
+      # grasp/mesh lookups are keyed by this class_id, so it MUST equal the
+      # detector's label. (Was '3', the RTDETR numeric convention; RTDETR is no
+      # longer the detector.)
+      class_id: 'soup can'
+      # ABSOLUTE workspace path, NOT a package-share command substitution like
+      # upstream's: this grasp set is a workspace-level artifact authored by the
+      # perception stage against gripper_tcp, not installed package share data,
+      # so there is no package to resolve it from. load_yaml_params expands
+      # ${VAR} on the raw text before parsing, so ISAAC_ROS_WS is substituted;
+      # docker/entrypoint.sh sets it.
+      #
+      # NOTE: no dollar-paren command substitution may appear in this file, not
+      # even in a comment. The BT orchestrator's YAML loader runs command
+      # substitution over the ENTIRE file text; a broken/illustrative one
+      # executes and splices its stderr/traceback back into the YAML, which then
+      # fails to parse (ScannerError). Same trap as rebot_sim_launch_params.yaml.
+      grasp_file_path: ${ISAAC_ROS_WS}/config/rebot_grasps_soup_can.yaml
+      mesh_file_path: ${ISAAC_ROS_WS}/isaac_ros_assets/isaac_ros_foundationpose/soup_can/soup_can.obj

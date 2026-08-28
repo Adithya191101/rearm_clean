@@ -1,0 +1,134 @@
+<?xml version="1.0"?>
+<!--
+  Parallel-jaw gripper and the canonical wrist frame contract.
+  Included by the FULL (planning) product only.
+
+  ==========================================================================
+  FRAME CONTRACT  (see docs/KDR-001-kinematic-frames.md for the derivation)
+  ==========================================================================
+    T_link6_gripper_link  xyz=(0, 0, 0.15971)  rpy=(0, -1.5708, 0)
+    T_gripper_link_tcp    xyz=(-0.0443, 0, 0)  rpy=(0, 0, 0)
+
+  gripper_link  — gripper body frame; end_effector parent_link in the SRDF.
+  gripper_tcp   — the grasp point, 44.3 mm along gripper_link -X, between the
+                   jaws. This is the frame MoveIt plans to, that grasps are
+                   authored against, and that objects attach to.
+
+  gripper_tcp is promoted into the URDF here. Upstream defines it only in the
+  MoveIt xacro, which means the SDK's Pinocchio model and cuMotion (both of which
+  load the raw URDF) cannot see it — they would silently plan to gripper_link,
+  44.3 mm deep into the object.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:property name="jaw_lower"    value="0.0"/>
+  <xacro:property name="jaw_upper"    value="0.0715"/>
+  <xacro:property name="jaw_effort"   value="100"/>
+  <!--
+    Upstream exports velocity="15" m/s for a 71.5 mm travel, i.e. full stroke in
+    5 ms. That is an export artifact. 0.2 m/s matches the MoveIt joint_limits.yaml
+    the demos actually run with, and matters because cuMotion time-parameterizes
+    from URDF limits.
+  -->
+  <xacro:property name="jaw_velocity" value="0.2"/>
+
+  <xacro:macro name="rebot_b601dm_gripper" params="prefix mesh_package">
+
+    <link name="${prefix}gripper_link">
+      <inertial>
+        <origin xyz="-0.11400456131826 7.30809328589541E-05 -8.098254686284E-08" rpy="0 0 0"/>
+        <mass value="0.181800159145243"/>
+        <inertia ixx="0.000232385828322385" ixy="-2.77584025941111E-07" ixz="-6.04874349510246E-10"
+                 iyy="5.85085867377427E-05"  iyz="-1.15493362444215E-08" izz="0.000205213535851537"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/visual/gripper_link.STL"/></geometry>
+        <material name="rebot_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/collision/gripper_link.STL"/></geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}gripper_joint" type="fixed">
+      <origin xyz="0 0 0.15971" rpy="0 -1.5708 0"/>
+      <parent link="${prefix}link6"/>
+      <child  link="${prefix}gripper_link"/>
+    </joint>
+
+    <!-- Canonical tool centre point. Massless frame, no geometry. -->
+    <link name="${prefix}gripper_tcp"/>
+    <joint name="${prefix}gripper_tcp_joint" type="fixed">
+      <origin xyz="-0.0443 0 0" rpy="0 0 0"/>
+      <parent link="${prefix}gripper_link"/>
+      <child  link="${prefix}gripper_tcp"/>
+    </joint>
+
+    <link name="${prefix}gripper_left">
+      <inertial>
+        <origin xyz="0.00937154605945142 -0.0183514409006279 -0.00213050813223617" rpy="0 0 0"/>
+        <mass value="0.0423278952416158"/>
+        <inertia ixx="9.68819007445228E-06" ixy="-1.14547785891207E-06" ixz="1.82410432419993E-08"
+                 iyy="9.7195653452821E-06"  iyz="1.20737618180169E-07"  izz="1.13638462227589E-05"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/visual/gripper_left.STL"/></geometry>
+        <material name="rebot_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/collision/gripper_left.STL"/></geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}gripper_joint1" type="prismatic">
+      <origin xyz="-0.042091 2.7531E-05 -1.3031E-05" rpy="0 0 -1.5708"/>
+      <parent link="${prefix}gripper_link"/>
+      <child  link="${prefix}gripper_left"/>
+      <axis xyz="1 0 0"/>
+      <limit lower="${jaw_lower}" upper="${jaw_upper}" effort="${jaw_effort}" velocity="${jaw_velocity}"/>
+    </joint>
+
+    <link name="${prefix}gripper_right">
+      <inertial>
+        <origin xyz="0.00937154599936671 0.0183514410059713 0.00213050822993754" rpy="0 0 0"/>
+        <mass value="0.0423278949561274"/>
+        <inertia ixx="9.68819002375832E-06" ixy="1.14547786360874E-06"  ixz="-1.82410118281856E-08"
+                 iyy="9.7195652747221E-06"  iyz="1.20737613592695E-07"  izz="1.13638461944347E-05"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/visual/gripper_right.STL"/></geometry>
+        <material name="rebot_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/collision/gripper_right.STL"/></geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}gripper_joint2" type="prismatic">
+      <origin xyz="-0.042091 -2.7531E-05 1.3031E-05" rpy="0 0 1.5708"/>
+      <parent link="${prefix}gripper_link"/>
+      <child  link="${prefix}gripper_right"/>
+      <axis xyz="1 0 0"/>
+      <limit lower="${jaw_lower}" upper="${jaw_upper}" effort="${jaw_effort}" velocity="${jaw_velocity}"/>
+      <!--
+        AUTHORED, not corrected: upstream has no <mimic> anywhere. Without it the
+        gripper is 2 DoF and every consumer (MoveIt, cuMotion, RViz) can command
+        asymmetric jaws that the single-motor hardware cannot produce.
+
+        multiplier="+1.0" is correct despite the jaws moving in opposite spatial
+        directions: the two joint origins are ANTIPARALLEL (yaw -1.5708 vs
+        +1.5708) and both axes are the local +X, so equal positive joint values
+        already open the jaws symmetrically. A -1.0 multiplier would drive one jaw
+        out of its [0, 0.0715] limit immediately.
+      -->
+      <mimic joint="${prefix}gripper_joint1" multiplier="1.0" offset="0.0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

@@ -1,0 +1,1775 @@
+diff --git a/isaac_ros_manipulation_bringup/launch/include/cumotion.launch.py b/isaac_ros_manipulation_bringup/launch/include/cumotion.launch.py
+index 256cbdc..4b9133c 100644
+--- a/isaac_ros_manipulation_bringup/launch/include/cumotion.launch.py
++++ b/isaac_ros_manipulation_bringup/launch/include/cumotion.launch.py
+@@ -15,6 +15,7 @@
+ #
+ # SPDX-License-Identifier: Apache-2.0
+ 
++import json
+ import os
+ from typing import List, Tuple
+ 
+@@ -46,10 +47,25 @@ def get_realsense_depth_topics(
+     return depth_image_topics, depth_camera_infos
+ 
+ 
+-def get_isaac_sim_depth_topics() -> Tuple[str, str]:
+-    depth_image_topics: str = '["/front_stereo_camera/depth/ground_truth"]'
+-    depth_camera_infos: str = '["/front_stereo_camera/left/camera_info"]'
+-    return depth_image_topics, depth_camera_infos
++def get_isaac_sim_depth_topics(num_cameras: int) -> Tuple[str, str]:
++    if num_cameras == 1:
++        cameras = [(
++            '/front_stereo_camera/depth/ground_truth',
++            '/front_stereo_camera/left/camera_info',
++        )]
++    elif num_cameras == 2:
++        cameras = [
++            ('/scene_cam_0/depth/image_raw', '/scene_cam_0/camera_info'),
++            ('/scene_cam_1/depth/image_raw', '/scene_cam_1/camera_info'),
++        ]
++    else:
++        raise ValueError(
++            f'Isaac Sim mapping supports one wrist camera or two scene cameras, '
++            f'got {num_cameras}')
++    return (
++        json.dumps([depth for depth, _ in cameras]),
++        json.dumps([camera_info for _, camera_info in cameras]),
++    )
+ 
+ 
+ def add_cumotion(args: lu.ArgumentContainer) -> List[Action]:
+@@ -69,7 +85,8 @@ def add_cumotion(args: lu.ArgumentContainer) -> List[Action]:
+         depth_image_topics, depth_camera_infos = get_realsense_depth_topics(
+             num_cameras, enable_dnn_depth_in_realsense)
+     elif camera_type is CameraType.ISAAC_SIM:
+-        depth_image_topics, depth_camera_infos = get_isaac_sim_depth_topics()
++        depth_image_topics, depth_camera_infos = get_isaac_sim_depth_topics(
++            num_cameras)
+     else:
+         raise Exception(f'CameraType {camera_type} not implemented.')
+ 
+diff --git a/isaac_ros_manipulation_bringup/launch/include/grounding_dino.launch.py b/isaac_ros_manipulation_bringup/launch/include/grounding_dino.launch.py
+index d1b1292..9473d48 100644
+--- a/isaac_ros_manipulation_bringup/launch/include/grounding_dino.launch.py
++++ b/isaac_ros_manipulation_bringup/launch/include/grounding_dino.launch.py
+@@ -60,6 +60,16 @@ def launch_setup(context, *args, **kwargs):
+     # a mask and route to foundation pose node.
+     detection2_d_topic = LaunchConfiguration('detection2_d_topic')
+ 
++    # The FoundationPose server's republished camera_info. resize_mask_node must be
++    # fed camera_info from THIS on-demand timeline (the same server that stamps the
++    # mask), not the free-running detector-front-end resize/camera_info. See the
++    # camera_info_scaler wiring below. rtdetr.launch.py does exactly this; the stock
++    # grounding_dino.launch.py omitted it, which left resize_mask_node's internal
++    # image<->camera_info GXF synchronizer with two mismatched timelines that never
++    # pair, so /segmentation never emitted and FoundationPose timed out.
++    foundationpose_server_input_camera_info_topic = LaunchConfiguration(
++        'foundationpose_server_input_camera_info_topic')
++
+     unscaled_detections_grounding_dino_topic = 'unscaled_detections_grounding_dino'
+     filtered_detection2_d_topic = 'filtered_detection2_d'
+ 
+@@ -380,6 +390,30 @@ def launch_setup(context, *args, **kwargs):
+                     ('segmentation', 'grounding_dino_segmentation')]
+     )
+ 
++    # Mirror rtdetr.launch.py: feed resize_mask_node a camera_info on the SAME
++    # on-demand timeline as the mask. The mask (grounding_dino_segmentation) is
++    # derived from the FoundationPose server's frame (detection -> scale_down ->
++    # detection2_d_to_mask, all fired by the estimate_pose action), so its stamp is
++    # the FP-server's now(). resize_mask_node internally pairs image+camera_info by
++    # timestamp (GXF Synchronization); the stock remap fed it resize/camera_info,
++    # which comes from the object_detection_server timeline (detect_objects action)
++    # -- a different server, different stamps, so no pair ever matched and
++    # /segmentation never emitted. Scaling the FP-server camera_info here puts it on
++    # the mask's timeline. scale_factor keeps the intrinsics describing the mask
++    # plane (mask_width/image_width); the downstream FP node reads its own
++    # /foundation_pose_server/camera_info, so what matters here is the timeline.
++    mask_resize_camera_info_topic = 'reshaped_camera_info_topic'
++    camera_info_scaler_node = Node(
++        package='isaac_ros_rtdetr',
++        executable='camera_info_scaler.py',
++        name='camera_info_scaler',
++        parameters=[{
++            'scale_factor': mask_width / image_width_int,
++        }],
++        remappings=[('input', foundationpose_server_input_camera_info_topic),
++                    ('output', mask_resize_camera_info_topic)]
++    )
++
+     resize_mask_node = ComposableNode(
+         name='resize_mask_node',
+         package='isaac_ros_image_proc',
+@@ -400,7 +434,7 @@ def launch_setup(context, *args, **kwargs):
+         }],
+         remappings=[
+             ('image', 'grounding_dino_segmentation'),
+-            ('camera_info', 'resize/camera_info'),
++            ('camera_info', mask_resize_camera_info_topic),
+             ('resize/image', 'segmentation'),
+             ('resize/camera_info', 'camera_info_segmentation')
+         ]
+@@ -432,6 +466,10 @@ def launch_setup(context, *args, **kwargs):
+         ])
+     else:
+         non_composable_nodes.append(scale_down_node)
++        # Pick-and-place path: the FP-server-timeline camera_info that
++        # resize_mask_node needs to pair with the mask (see comment at its
++        # definition). Only the pick-and-place branch runs the mask->FP subgraph.
++        non_composable_nodes.append(camera_info_scaler_node)
+ 
+     load_composable_nodes = LoadComposableNodes(
+         target_container=constants.MANIPULATOR_CONTAINER_NAME,
+diff --git a/isaac_ros_manipulation_bringup/launch/include/nvblox.launch.py b/isaac_ros_manipulation_bringup/launch/include/nvblox.launch.py
+index f208976..beaa6eb 100644
+--- a/isaac_ros_manipulation_bringup/launch/include/nvblox.launch.py
++++ b/isaac_ros_manipulation_bringup/launch/include/nvblox.launch.py
+@@ -49,13 +49,40 @@ def get_realsense_remappings(
+     return remappings
+ 
+ 
+-def get_sim_remappings() -> List[Tuple[str, str]]:
++def get_sim_remappings(num_cameras: int) -> List[Tuple[str, str]]:
++    if num_cameras == 1:
++        cameras = [(
++            '/front_stereo_camera/left/image_raw',
++            '/front_stereo_camera/left/camera_info',
++        )]
++    elif num_cameras == 2:
++        cameras = [
++            ('/scene_cam_0/rgb/image_raw', '/scene_cam_0/camera_info'),
++            ('/scene_cam_1/rgb/image_raw', '/scene_cam_1/camera_info'),
++        ]
++    else:
++        raise ValueError(
++            f'Isaac Sim mapping supports one wrist camera or two scene cameras, '
++            f'got {num_cameras}')
++
+     remappings = []
+-    remappings.append(('/camera_0/color/image', '/front_stereo_camera/left/image_raw'))
+-    remappings.append(('/camera_0/color/camera_info', '/front_stereo_camera/left/camera_info'))
+-    # We want nvblox to consume the depth map that segments out the robot
+-    remappings.append(('/camera_0/depth/image', '/cumotion/camera_1/world_depth'))
+-    remappings.append(('/camera_0/depth/camera_info', '/front_stereo_camera/left/camera_info'))
++    for index, (color_topic, camera_info_topic) in enumerate(cameras):
++        remappings.append((f'/camera_{index}/color/image', color_topic))
++        remappings.append((
++            f'/camera_{index}/color/camera_info', camera_info_topic))
++        # nvblox consumes the segmenter's robot-masked depth, not raw depth.
++        remappings.append((
++            f'/camera_{index}/depth/image',
++            f'/cumotion/camera_{index + 1}/world_depth',
++        ))
++        # Robot segmentation is intentionally slower than the raw camera. Its
++        # output keeps the source image stamp, by which time nvblox's exact
++        # Image+CameraInfo synchronizer has dropped the matching raw info. The
++        # relay republishes these fixed intrinsics on the processed timeline.
++        remappings.append((
++            f'/camera_{index}/depth/camera_info',
++            f'/nvblox/scene_cam_{index}/depth/camera_info',
++        ))
+     return remappings
+ 
+ 
+@@ -72,7 +99,8 @@ def add_nvblox(args: lu.ArgumentContainer) -> List[lut.Action]:
+     if camera_type is CameraType.REALSENSE:
+         assert num_cameras <= 2, 'Running more than 2 RealSense cameras not allowed.'
+     elif camera_type is CameraType.ISAAC_SIM:
+-        assert num_cameras == 1, 'Running multiple cameras in Isaac Sim not allowed.'
++        assert 1 <= num_cameras <= 2, (
++            'Isaac Sim supports one wrist camera or two fixed scene cameras.')
+ 
+     # Get config files
+     base_config = lu.get_path('nvblox_examples_bringup', 'config/nvblox/nvblox_base.yaml')
+@@ -93,7 +121,7 @@ def add_nvblox(args: lu.ArgumentContainer) -> List[lut.Action]:
+         )
+         camera_config = realsense_config
+     elif camera_type is CameraType.ISAAC_SIM:
+-        remappings = get_sim_remappings()
++        remappings = get_sim_remappings(num_cameras)
+         camera_config = isaac_sim_config
+     else:
+         raise Exception(f'CameraType {camera_type} not implemented.')
+@@ -109,8 +137,29 @@ def add_nvblox(args: lu.ArgumentContainer) -> List[lut.Action]:
+     parameters.append(manipulator_base_config)
+     parameters.append(camera_config)
+     parameters.append(workspace_config)
+-    parameters.append({'num_cameras': num_cameras})
+-    parameters.append({'global_frame': nvblox_global_frame})
++    parameters.append({
++        'num_cameras': num_cameras,
++        'global_frame': nvblox_global_frame,
++        # cuMotion consumes only the ESDF. Avoid spending GPU and integration
++        # bandwidth on a colored mesh that this workflow never reads.
++        'use_color': False,
++        'use_depth': True,
++        'use_lidar': False,
++        # The scene-camera publishers run at 15 Hz after synchronized frame
++        # skipping. Keep every masked depth frame without polling at 60-70 Hz.
++        'integrate_depth_rate_hz': 20.0,
++        # Bound reconstruction to the physical table, robot reach, and transfer
++        # wall. The stock sim_test_bench volume is roughly 8x larger.
++        'static_mapper.workspace_bounds_type': 'bounding_box',
++        'static_mapper.workspace_bounds_min_corner_x_m': -0.10,
++        'static_mapper.workspace_bounds_min_corner_y_m': -0.35,
++        'static_mapper.workspace_bounds_min_height_m': -0.05,
++        'static_mapper.workspace_bounds_max_corner_x_m': 0.65,
++        'static_mapper.workspace_bounds_max_corner_y_m': 0.60,
++        'static_mapper.workspace_bounds_max_height_m': 0.65,
++        'static_mapper.projective_integrator_max_integration_distance_m': 2.0,
++        'static_mapper.esdf_integrator_max_distance_m': 0.5,
++    })
+ 
+     nvblox_node = lut.ComposableNode(
+         name='nvblox_node',
+diff --git a/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/__init__.py b/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/__init__.py
+index 7463173..87895cc 100644
+--- a/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/__init__.py
++++ b/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/__init__.py
+@@ -26,6 +26,7 @@ from .read_drop_pose import ReadDropPose
+ from .read_grasp_poses import ReadGraspPoses
+ from .switch_controllers import SwitchControllers
+ from .update_drop_pose_to_home import UpdateDropPoseToHome
++from .wait_for_fresh_joint_state import WaitForFreshJointState
+ 
+ 
+ __all__ = [
+@@ -40,4 +41,5 @@ __all__ = [
+     'ReadGraspPoses',
+     'SwitchControllers',
+     'UpdateDropPoseToHome',
++    'WaitForFreshJointState',
+ ]
+diff --git a/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/attach_object.py b/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/attach_object.py
+index 7ccd8a4..9f378eb 100644
+--- a/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/attach_object.py
++++ b/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/attach_object.py
+@@ -27,6 +27,54 @@ import py_trees
+ import rclpy
+ 
+ 
++def _attachment_mesh_pose(grasp_reader, grasp_pose_object):
++    """Return T_grasp_mesh, accounting for an optional non-mesh object frame."""
++    geometry = grasp_reader.grasp_data.get('object_geometry', {})
++    mesh_pose = geometry.get('mesh_pose_in_object')
++
++    position = grasp_pose_object.position
++    quaternion = grasp_pose_object.quaternion
++    grasp_pose_object_matrix = grasp_reader.get_transformation_matrix(
++        {
++            'x': quaternion.x,
++            'y': quaternion.y,
++            'z': quaternion.z,
++            'w': quaternion.w,
++        },
++        [position.x, position.y, position.z],
++    )
++    if mesh_pose is not None:
++        position = mesh_pose['position']
++        orientation = mesh_pose['orientation']
++        quaternion = {
++            'x': orientation['xyz'][0],
++            'y': orientation['xyz'][1],
++            'z': orientation['xyz'][2],
++            'w': orientation['w'],
++        }
++        object_pose_mesh_matrix = grasp_reader.get_transformation_matrix(
++            quaternion, position
++        )
++        grasp_pose_object_matrix = (
++            grasp_pose_object_matrix @ object_pose_mesh_matrix
++        )
++
++    translation, quaternion = (
++        grasp_reader.matrix_to_ros_translation_quaternion(
++            grasp_pose_object_matrix
++        )
++    )
++    return {
++        'position': [translation.x, translation.y, translation.z],
++        'orientation': [
++            quaternion.x,
++            quaternion.y,
++            quaternion.z,
++            quaternion.w,
++        ],
++    }
++
++
+ class AttachObject(BaseActionBehavior):
+     """
+     Attach an object to the robot gripper using action client.
+@@ -211,20 +259,12 @@ class AttachObject(BaseActionBehavior):
+             grasp_frame=self.grasp_frame
+         )
+ 
+-        # Convert to dictionary format (object pose in grasp_frame)
+-        grasp_pose_object_dict = {
+-            'position': [
+-                grasp_pose_object.position.x,
+-                grasp_pose_object.position.y,
+-                grasp_pose_object.position.z
+-            ],
+-            'orientation': [
+-                grasp_pose_object.quaternion.x,
+-                grasp_pose_object.quaternion.y,
+-                grasp_pose_object.quaternion.z,
+-                grasp_pose_object.quaternion.w
+-            ]
+-        }
++        # Grasp files may use a convenient canonical object frame that differs
++        # from the CAD mesh frame. Compose the optional T_object_mesh metadata
++        # before asking cuMotion to generate attached-object collision spheres.
++        grasp_pose_object_dict = _attachment_mesh_pose(
++            grasp_reader, grasp_pose_object
++        )
+ 
+         # Create the object attachment configuration
+         # The pose is in grasp_frame, which matches the 'attached_object' link in XRDF
+@@ -232,9 +272,13 @@ class AttachObject(BaseActionBehavior):
+             grasp_pose_object=grasp_pose_object_dict,
+             shape=self.shape,
+             scale=self.scale,
+-            mesh_file_path=mesh_file_path
++            mesh_file_path=mesh_file_path,
++            frame_id=self.grasp_frame
+         )
+ 
+-        self.node.get_logger().info('Attaching object')
++        self.node.get_logger().info(
++            'Attaching object mesh in %s at position %s'
++            % (self.grasp_frame, grasp_pose_object_dict['position'])
++        )
+         self.send_goal(goal)
+         return py_trees.common.Status.RUNNING
+diff --git a/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/axial_object_pose.py b/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/axial_object_pose.py
+new file mode 100644
+index 0000000..fc9ab2e
+--- /dev/null
++++ b/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/axial_object_pose.py
+@@ -0,0 +1,59 @@
++"""Canonicalize a detected axial object pose without losing its end direction."""
++
++from __future__ import annotations
++
++from typing import Sequence
++
++import numpy as np
++
++
++def canonicalize_axial_pose(
++    world_pose_mesh: np.ndarray,
++    *,
++    half_height_m: float,
++    top_axis_in_mesh: Sequence[float],
++    minimum_vertical_axis: float = 0.75,
++) -> tuple[np.ndarray, float]:
++    """Return a world-aligned object pose that preserves detected top/bottom.
++
++    FoundationPose yaw is unstable for a rotationally symmetric can. Its textured
++    top-versus-bottom axis is still useful, so this keeps that binary sign while
++    snapping the object frame to either identity (upright) or 180 degrees about X
++    (bottom-up). The object origin is the semantic bottom-center, not whichever
++    face currently touches the table.
++    """
++    pose = np.asarray(world_pose_mesh, dtype=float)
++    if pose.shape != (4, 4) or not np.all(np.isfinite(pose)):
++        raise ValueError("world_pose_mesh must be a finite 4x4 matrix")
++    if not np.isfinite(half_height_m) or half_height_m <= 0.0:
++        raise ValueError("half_height_m must be positive")
++    if not 0.0 < minimum_vertical_axis <= 1.0:
++        raise ValueError("minimum_vertical_axis must be in (0, 1]")
++
++    mesh_axis = np.asarray(top_axis_in_mesh, dtype=float)
++    if mesh_axis.shape != (3,) or not np.all(np.isfinite(mesh_axis)):
++        raise ValueError("top_axis_in_mesh must contain three finite values")
++    axis_norm = float(np.linalg.norm(mesh_axis))
++    if axis_norm <= 1.0e-9:
++        raise ValueError("top_axis_in_mesh must be nonzero")
++    mesh_axis /= axis_norm
++
++    world_axis = pose[:3, :3] @ mesh_axis
++    world_axis_norm = float(np.linalg.norm(world_axis))
++    if world_axis_norm <= 1.0e-9:
++        raise ValueError("detected rotation produced a zero object axis")
++    axis_z = float(world_axis[2] / world_axis_norm)
++    if abs(axis_z) < minimum_vertical_axis:
++        raise ValueError(
++            "detected object axis is not vertical enough: "
++            f"axis_z={axis_z:.3f}, required |axis_z|>={minimum_vertical_axis:.3f}"
++        )
++
++    direction = 1.0 if axis_z > 0.0 else -1.0
++    canonical = np.eye(4, dtype=float)
++    if direction < 0.0:
++        canonical[1, 1] = -1.0
++        canonical[2, 2] = -1.0
++    canonical[:2, 3] = pose[:2, 3]
++    canonical[2, 3] = pose[2, 3] - direction * half_height_m
++    return canonical, axis_z
+diff --git a/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/close_gripper.py b/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/close_gripper.py
+index d526cc8..ade66dc 100644
+--- a/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/close_gripper.py
++++ b/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/close_gripper.py
+@@ -107,18 +107,15 @@ class CloseGripper(BaseActionBehavior):
+         """
+         Process the gripper close action result.
+ 
+-        A close command is considered successful when the action server
+-        reports either ``reached_goal`` (commanded position reached) or
+-        ``stalled`` (gripper stopped while applying force, i.e. holding an
+-        object). Comparing the raw ``position`` field against
+-        ``close_position`` is not reliable: when closing onto an object the
+-        gripper legitimately stops short of the commanded width.
++        This behavior is the pick tree's grasp gate, so only a physical contact
++        stall is successful. ``reached_goal`` means the jaws reached the force-
++        close target without touching the object and must fail the pick before
++        the lift starts.
+ 
+         Returns
+         -------
+         py_trees.common.Status
+-            SUCCESS if the gripper close completed (either reached the
+-            commanded position or stalled on an object), FAILURE otherwise.
++            SUCCESS only when the gripper stalled on contact, FAILURE otherwise.
+ 
+         """
+         result = self.get_action_result()
+@@ -126,13 +123,19 @@ class CloseGripper(BaseActionBehavior):
+         stalled = getattr(result, 'stalled', None)
+         position = getattr(result, 'position', None)
+ 
+-        if reached_goal or stalled:
++        if stalled:
+             self.node.get_logger().info(
+-                f'[{self.name}] Successfully closed gripper '
++                f'[{self.name}] Grasp confirmed by physical contact '
+                 f'(reached_goal={reached_goal}, stalled={stalled}, position={position})')
+             return py_trees.common.Status.SUCCESS
+ 
++        if reached_goal:
++            self.node.get_logger().error(
++                f'[{self.name}] Gripper reached the close target in empty air; '
++                f'refusing to lift (position={position})')
++            return py_trees.common.Status.FAILURE
++
+         self.node.get_logger().error(
+-            f'[{self.name}] Failed to close gripper to desired position '
++            f'[{self.name}] Failed to establish gripper contact '
+             f'(reached_goal={reached_goal}, stalled={stalled}, position={position})')
+         return py_trees.common.Status.FAILURE
+diff --git a/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/read_grasp_poses.py b/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/read_grasp_poses.py
+index b5d7aa2..8eaaf5d 100644
+--- a/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/read_grasp_poses.py
++++ b/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/read_grasp_poses.py
+@@ -16,10 +16,42 @@
+ # SPDX-License-Identifier: Apache-2.0
+ 
+ from geometry_msgs.msg import Pose, PoseArray, TransformStamped
++import numpy as np
+ import py_trees
+ from std_msgs.msg import Header
+ import tf2_ros
+ 
++from .axial_object_pose import canonicalize_axial_pose
++
++
++# Per-class FoundationPose mesh conventions for rotationally symmetric objects.
++#
++# FoundationPose returns the CAD mesh frame. For the soup-can mesh, +Y points
++# toward the labeled top. The grasp set instead uses a semantic bottom-center
++# origin with +Z pointing toward that top.
++#
++# Yaw about a cylinder's axis is unstable, so it is canonicalized. The axial
++# sign is not discarded: the texture distinguishes the two ends, and retaining
++# that sign is what lets a bottom-up can produce a rolled grasp and an upright
++# placement. A nearly horizontal estimate is rejected rather than silently
++# converted into a plausible but wrong grasp.
++#
++# The legacy GT bridge already supplies the grasp convention and is not listed.
++_HALF_H_SOUP_CAN = 0.0505
++_SYMMETRIC_AXIAL_OBJECTS = {
++    # class_id -> (half-height, top axis expressed in the FoundationPose mesh)
++    'soup can': (_HALF_H_SOUP_CAN, (0.0, 1.0, 0.0)),
++}
++
++
++# FoundationPose and grasp files use different object frames:
++#   1. Frame convention. The grasp set (config/rebot_grasps_soup_can.yaml) is
++#      authored with the object origin at the CENTRE OF THE BASE and the can axis
++#      +Z. GraspReader composes  world_gripper = world_pose_object @ stored_grasp,
++#      so world_pose_object must be in THAT convention.
++#   2. Symmetry. Rotation about the can axis is arbitrary, but top-versus-bottom
++#      remains load-bearing and is preserved by canonicalize_axial_pose.
++
+ 
+ class ReadGraspPoses(py_trees.behaviour.Behaviour):
+     """
+@@ -120,7 +152,27 @@ class ReadGraspPoses(py_trees.behaviour.Behaviour):
+             }
+ 
+             grasp_manager = self.blackboard.grasp_reader_manager.get_grasp_reader(object_class_id)
+-            world_pose_object = grasp_manager.get_transformation_matrix(quat_dict, position)
++            world_pose_object = grasp_manager.get_transformation_matrix(
++                quat_dict, position)
++
++            # Symmetric objects retain FoundationPose's detected axial sign while
++            # unstable yaw/tilt are snapped to the grasp-set convention.
++            axial_spec = _SYMMETRIC_AXIAL_OBJECTS.get(object_class_id)
++            if axial_spec is not None:
++                half_h, top_axis_in_mesh = axial_spec
++                world_pose_object, detected_axis_z = canonicalize_axial_pose(
++                    world_pose_object,
++                    half_height_m=half_h,
++                    top_axis_in_mesh=top_axis_in_mesh,
++                )
++                orientation_label = (
++                    'upright' if detected_axis_z > 0.0 else 'bottom-up')
++                self.node.get_logger().info(
++                    f"[{self.name}] detected {orientation_label} "
++                    f"'{object_class_id}' (top_axis_z={detected_axis_z:.3f}); "
++                    'canonical object frame at '
++                    f"{np.round(world_pose_object[:3, 3], 4).tolist()}")
++
+             grasp_poses = grasp_manager.get_pose_for_pick_task_from_cached_pose(world_pose_object)
+ 
+             self.node.get_logger().info(
+diff --git a/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/wait_for_fresh_joint_state.py b/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/wait_for_fresh_joint_state.py
+new file mode 100644
+index 0000000..19d3a7e
+--- /dev/null
++++ b/isaac_ros_manipulation_orchestration/isaac_ros_manipulation_orchestration/behaviors/motion_behaviors/wait_for_fresh_joint_state.py
+@@ -0,0 +1,100 @@
++# SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
++# Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++# http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++#
++# SPDX-License-Identifier: Apache-2.0
++
++"""Behavior that gates planning on a joint state received after activation."""
++
++import math
++import threading
++import time
++
++import py_trees
++from sensor_msgs.msg import JointState
++
++
++class WaitForFreshJointState(py_trees.behaviour.Behaviour):
++    """Wait for a structurally valid joint-state sample newer than initialise."""
++
++    def __init__(
++        self,
++        name: str,
++        topic_name: str = '/joint_states',
++        timeout_sec: float = 5.0,
++        minimum_samples: int = 2,
++    ):
++        super().__init__(name)
++        self._topic_name = topic_name
++        self._timeout_sec = float(timeout_sec)
++        self._minimum_samples = int(minimum_samples)
++        if self._minimum_samples < 1:
++            raise ValueError('minimum_samples must be at least one')
++        self._lock = threading.Lock()
++        self._sample_generation = 0
++        self._start_generation = 0
++        self._start_time = 0.0
++        self.node = None
++        self._subscription = None
++
++    def setup(self, **kwargs):
++        """Create the subscription using the behavior tree's ROS node."""
++        try:
++            self.node = kwargs['node']
++        except KeyError as error:
++            raise KeyError(
++                f"didn't find ros2 node in setup's kwargs for {self.name}"
++            ) from error
++        self._subscription = self.node.create_subscription(
++            JointState, self._topic_name, self._on_joint_state, 10)
++        return True
++
++    def initialise(self):
++        """Snapshot the generation so pre-attachment samples cannot pass."""
++        with self._lock:
++            self._start_generation = self._sample_generation
++        self._start_time = time.monotonic()
++
++    def update(self):
++        """Return success only after a newer valid sample is observed."""
++        with self._lock:
++            fresh_samples = self._sample_generation - self._start_generation
++            fresh = fresh_samples >= self._minimum_samples
++        if fresh:
++            self.node.get_logger().info(
++                f'[{self.name}] Received {fresh_samples} fresh joint states '
++                f'after attachment')
++            return py_trees.common.Status.SUCCESS
++
++        elapsed = time.monotonic() - self._start_time
++        if elapsed >= self._timeout_sec:
++            self.node.get_logger().error(
++                f'[{self.name}] No fresh joint state on {self._topic_name} '
++                f'within {self._timeout_sec:.1f}s')
++            return py_trees.common.Status.FAILURE
++        return py_trees.common.Status.RUNNING
++
++    def shutdown(self):
++        """Destroy the subscription when the tree shuts down."""
++        if self.node is not None and self._subscription is not None:
++            self.node.destroy_subscription(self._subscription)
++            self._subscription = None
++
++    def _on_joint_state(self, msg: JointState):
++        if not msg.name or len(msg.name) != len(msg.position):
++            return
++        if not all(math.isfinite(float(position)) for position in msg.position):
++            return
++        with self._lock:
++            self._sample_generation += 1
+diff --git a/isaac_ros_manipulation_orchestration/package.xml b/isaac_ros_manipulation_orchestration/package.xml
+index a8ee368..c4cc07a 100644
+--- a/isaac_ros_manipulation_orchestration/package.xml
++++ b/isaac_ros_manipulation_orchestration/package.xml
+@@ -21,6 +21,7 @@
+   <depend>py_trees_ros_viewer</depend>
+   <depend>python3-scipy</depend>
+   <depend>rclpy</depend>
++  <depend>sensor_msgs</depend>
+ 
+   <exec_depend>ros2launch</exec_depend>
+ 
+diff --git a/isaac_ros_manipulation_orchestration/test/motion_behaviors/test_wait_for_fresh_joint_state.py b/isaac_ros_manipulation_orchestration/test/motion_behaviors/test_wait_for_fresh_joint_state.py
+new file mode 100644
+index 0000000..48df0a3
+--- /dev/null
++++ b/isaac_ros_manipulation_orchestration/test/motion_behaviors/test_wait_for_fresh_joint_state.py
+@@ -0,0 +1,103 @@
++# SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
++# Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++# http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++#
++# SPDX-License-Identifier: Apache-2.0
++
++"""Tests for the post-attachment fresh-joint-state gate."""
++
++import time
++
++from isaac_ros_manipulation_orchestration.behaviors.motion_behaviors import (
++    WaitForFreshJointState,
++)
++from isaac_ros_manipulation_test_utils.orchestration.behavior_base import BehaviorTestBase
++from isaac_ros_manipulation_test_utils.orchestration.timeouts import (
++    get_node_startup_delay,
++)
++from launch_ros.actions import Node
++import py_trees
++import pytest
++import rclpy
++from sensor_msgs.msg import JointState
++
++
++JOINT_STATES_TOPIC = '/wait_for_fresh_joint_state_test'
++
++
++class WaitForFreshJointStateTest(BehaviorTestBase):
++    """Verify that only samples received after initialise satisfy the gate."""
++
++    def setUp(self):
++        super().setUp()
++        self.publisher = self.node.create_publisher(
++            JointState, JOINT_STATES_TOPIC, 10)
++
++    def tearDown(self):
++        self.node.destroy_publisher(self.publisher)
++        super().tearDown()
++
++    def _publish_valid_state(self):
++        msg = JointState()
++        msg.name = ['joint1']
++        msg.position = [0.0]
++        self.publisher.publish(msg)
++        rclpy.spin_once(self.node, timeout_sec=0.1)
++
++    def test_requires_two_samples_newer_than_initialise(self):
++        behavior = WaitForFreshJointState(
++            name='Wait for Fresh Joint State',
++            topic_name=JOINT_STATES_TOPIC,
++            timeout_sec=2.0,
++            minimum_samples=2,
++        )
++        behavior.setup(node=self.node)
++        try:
++            deadline = time.monotonic() + 1.0
++            while (self.publisher.get_subscription_count() == 0
++                   and time.monotonic() < deadline):
++                rclpy.spin_once(self.node, timeout_sec=0.05)
++            self.assertGreater(self.publisher.get_subscription_count(), 0)
++
++            self._publish_valid_state()  # stale: before initialise
++            behavior.tick_once()
++            self.assertEqual(behavior.status, py_trees.common.Status.RUNNING)
++
++            self._publish_valid_state()
++            behavior.tick_once()
++            self.assertEqual(behavior.status, py_trees.common.Status.RUNNING)
++
++            self._publish_valid_state()
++            behavior.tick_once()
++            self.assertEqual(behavior.status, py_trees.common.Status.SUCCESS)
++        finally:
++            behavior.shutdown()
++
++
++@pytest.mark.rostest
++def generate_test_description():
++    """Keep launch alive while the in-process behavior test runs."""
++    keep_alive = Node(
++        package='tf2_ros',
++        executable='static_transform_publisher',
++        name='fresh_joint_state_test_keep_alive',
++        output='screen',
++        arguments=['0', '0', '0', '0', '0', '0', 'world', 'base_link'],
++    )
++    return WaitForFreshJointStateTest.generate_test_description(
++        run_test=True,
++        use_sim_time=False,
++        nodes=[keep_alive],
++        node_startup_delay=get_node_startup_delay(has_external_nodes=True),
++    )
+diff --git a/isaac_ros_manipulation_pick_and_place/isaac_ros_manipulation_pick_and_place/behavior_trees/motion_subtrees/drop_operations.py b/isaac_ros_manipulation_pick_and_place/isaac_ros_manipulation_pick_and_place/behavior_trees/motion_subtrees/drop_operations.py
+index a9b40f8..542f1f2 100644
+--- a/isaac_ros_manipulation_pick_and_place/isaac_ros_manipulation_pick_and_place/behavior_trees/motion_subtrees/drop_operations.py
++++ b/isaac_ros_manipulation_pick_and_place/isaac_ros_manipulation_pick_and_place/behavior_trees/motion_subtrees/drop_operations.py
+@@ -24,6 +24,7 @@ Located in behavior_trees.motion_subtrees.drop_operations.
+ """
+ 
+ from isaac_ros_manipulation_orchestration.behaviors.motion_behaviors import (
++    DetachObject,
+     ExecuteTrajectory,
+     OpenGripper,
+     PlanToPose,
+@@ -208,6 +209,7 @@ def create_drop_subtree(
+     │   └─ [See create_plan_to_drop_subtree]
+     ├─ Execute Drop Subtree           (Sequence | memory: True)
+     │   └─ [See create_execute_drop_subtree]
++    ├─ Detach Object                  (Behaviour | remove carried collision geometry)
+     └─ Open Gripper Subtree           (Sequence | memory: True)
+         ├─ Retry Activate Tool Controller (Decorator)
+         │   └─ Activate Tool Controller (Behaviour | SwitchControllers)
+@@ -239,6 +241,15 @@ def create_drop_subtree(
+     execute_drop_subtree = create_execute_drop_subtree(
+         behavior_config_initializer)
+ 
++    # Remove the carried collision geometry before opening the physical jaws.
++    # Opening first leaves the planner believing it still carries an object that
++    # has already been released.
++    detach_config = behavior_config_initializer.get_detach_object_config()
++    detach_object = DetachObject(
++        name='Detach Object',
++        action_server_name=detach_config.action_server_name
++    )
++
+     # Open Gripper Subtree
+     open_gripper_subtree = py_trees.composites.Sequence(
+         name='Open Gripper Subtree', memory=True)
+@@ -280,6 +291,7 @@ def create_drop_subtree(
+         refresh_drop_pose,
+         plan_to_drop_subtree,
+         execute_drop_subtree,
++        detach_object,
+         open_gripper_subtree
+     ])
+ 
+diff --git a/isaac_ros_manipulation_pick_and_place/isaac_ros_manipulation_pick_and_place/behavior_trees/motion_subtrees/motion_workflows.py b/isaac_ros_manipulation_pick_and_place/isaac_ros_manipulation_pick_and_place/behavior_trees/motion_subtrees/motion_workflows.py
+index a348bce..2d38aa9 100644
+--- a/isaac_ros_manipulation_pick_and_place/isaac_ros_manipulation_pick_and_place/behavior_trees/motion_subtrees/motion_workflows.py
++++ b/isaac_ros_manipulation_pick_and_place/isaac_ros_manipulation_pick_and_place/behavior_trees/motion_subtrees/motion_workflows.py
+@@ -28,8 +28,8 @@ import operator
+ 
+ from isaac_ros_manipulation_orchestration.behaviors.motion_behaviors import (
+     AttachObject,
+-    DetachObject,
+     ReadDropPose,
++    WaitForFreshJointState,
+ )
+ from isaac_ros_manipulation_orchestration.behaviors.update_object_status import (
+     MarkObjectAsActive,
+@@ -86,9 +86,9 @@ def create_motion_subtree(
+     │   └─ [See create_pick_subtree from pick_operations]
+     ├─ Retry Attach Object            (Decorator)
+     │   └─ Attach Object              (Behaviour)
++    ├─ Wait for Fresh Joint State     (Behaviour | post-attachment sample gate)
+     ├─ Drop                           (Sequence | memory: True)
+     │   └─ [See create_drop_subtree from drop_operations]
+-    ├─ Detach Object                  (Behaviour)
+     └─ Success?                       (Decorator | EternalGuard: SUCCESS if abort_motion==False;
+                                          blocks child otherwise)
+         └─ Mark Object as Done        (Behaviour)
+@@ -132,19 +132,18 @@ def create_motion_subtree(
+         num_failures=retry_config.max_attachment_retries
+     )
+ 
++    # Attaching rebuilds cuMotion's robot model and clears its cached state.
++    # Require a sample published after that rebuild before requesting the drop
++    # plan; otherwise all retries can fail before the next simulator tick.
++    wait_for_fresh_joint_state = WaitForFreshJointState(
++        name='Wait for Fresh Joint State')
++
+     # Get drop subtree
+     drop_subtree = create_drop_subtree(behavior_config_initializer)
+ 
+     # Mark Object as Done
+     mark_object_as_done = MarkObjectAsDone(name='Mark Object as Done')
+ 
+-    # Create detach object behavior
+-    detach_config = behavior_config_initializer.get_detach_object_config()
+-    detach_object = DetachObject(
+-        name='Detach Object',
+-        action_server_name=detach_config.action_server_name
+-    )
+-
+     # Success? guard condition using EternalGuard
+     success_guard = py_trees.decorators.EternalGuard(
+         name='Success?',
+@@ -158,8 +157,8 @@ def create_motion_subtree(
+         read_drop_pose,
+         pick_subtree,
+         retry_attach_object,
++        wait_for_fresh_joint_state,
+         drop_subtree,
+-        detach_object,
+         success_guard
+     ])
+ 
+diff --git a/isaac_ros_manipulation_pick_and_place/isaac_ros_manipulation_pick_and_place/behavior_trees/multi_object_pick_and_place_bt.py b/isaac_ros_manipulation_pick_and_place/isaac_ros_manipulation_pick_and_place/behavior_trees/multi_object_pick_and_place_bt.py
+index 3ed3dea..fc392fa 100644
+--- a/isaac_ros_manipulation_pick_and_place/isaac_ros_manipulation_pick_and_place/behavior_trees/multi_object_pick_and_place_bt.py
++++ b/isaac_ros_manipulation_pick_and_place/isaac_ros_manipulation_pick_and_place/behavior_trees/multi_object_pick_and_place_bt.py
+@@ -23,6 +23,7 @@ perception and motion workflows in parallel for multi-object manipulation.
+ Located in behavior_trees.multi_object_pick_and_place_bt.
+ """
+ 
++from isaac_ros_manipulation_interfaces.action import MultiObjectPickAndPlace
+ from isaac_ros_manipulation_orchestration.behaviors.report_generation import (
+     ReportGeneration
+ )
+@@ -41,6 +42,16 @@ from isaac_ros_manipulation_pick_and_place.behavior_trees.perception_subtrees im
+ import py_trees
+ 
+ 
++def check_workflow_pending(blackboard) -> bool:
++    """Return whether perception and motion may continue for the active goal."""
++    if not blackboard.exists('workflow_status'):
++        return False
++    return (
++        blackboard.workflow_status ==
++        MultiObjectPickAndPlace.Result.UNKNOWN
++    )
++
++
+ def create_workflow_status_snapshot() -> py_trees.composites.Sequence:
+     """
+     Create the Workflow Status Snapshot sequence for status reporting.
+@@ -83,15 +94,13 @@ def create_multi_object_pick_and_place_tree(
+ 
+     Tree structure:
+     Multi-Object Pick and Place Task  (Sequence | memory: True)
+-    └─ Workflow                       (Parallel | policy: SuccessOnAll, synchronise: False)
+-        ├─ FailureIsRunning (Perception) (Decorator)
+-        │   └─ Perception Workflow    (Parallel | policy: SuccessOnAll, synchronise: False)
+-        │       └─ [See create_perception_workflow from perception_subtrees]
+-        ├─ FailureIsRunning (Motion)  (Decorator)
+-        │   └─ Motion Sequence        (Sequence | memory: True)
+-        │       └─ [See create_motion_workflow from motion_subtrees]
+-        └─ Workflow Status Snapshot   (Sequence | memory: True)
+-            └─ [See create_workflow_status_snapshot]
++    └─ Workflow Pending Guard         (Decorator | EternalGuard)
++        └─ Workflow                   (Parallel | policy: SuccessOnAll, synchronise: False)
++            ├─ FailureIsRunning (Perception) (Decorator)
++            │   └─ [See create_perception_workflow]
++            ├─ FailureIsRunning (Motion)  (Decorator)
++            │   └─ [See create_motion_workflow]
++            └─ Workflow Status Snapshot   (Sequence | memory: True)
+ 
+     Args
+     ----
+@@ -142,7 +151,16 @@ def create_multi_object_pick_and_place_tree(
+         workflow_status_snapshot
+     ])
+ 
+-    # Add workflow to root
+-    root.add_children([workflow])
++    # Stop all perception and motion branches after a terminal result. Without
++    # this guard, the detector immediately re-enqueues the placed object and the
++    # continuously ticking tree starts an unintended second pick.
++    workflow_pending_guard = py_trees.decorators.EternalGuard(
++        name='Workflow Pending Guard',
++        condition=check_workflow_pending,
++        blackboard_keys={'workflow_status'},
++        child=workflow,
++    )
++
++    root.add_children([workflow_pending_guard])
+ 
+     return root
+diff --git a/isaac_ros_manipulation_pick_and_place/isaac_ros_manipulation_pick_and_place/scripts/multi_object_pick_and_place.py b/isaac_ros_manipulation_pick_and_place/isaac_ros_manipulation_pick_and_place/scripts/multi_object_pick_and_place.py
+index e20bad6..264efdd 100644
+--- a/isaac_ros_manipulation_pick_and_place/isaac_ros_manipulation_pick_and_place/scripts/multi_object_pick_and_place.py
++++ b/isaac_ros_manipulation_pick_and_place/isaac_ros_manipulation_pick_and_place/scripts/multi_object_pick_and_place.py
+@@ -16,6 +16,7 @@
+ # SPDX-License-Identifier: Apache-2.0
+ 
+ import argparse
++import collections
+ import logging
+ import threading
+ from typing import Optional
+@@ -32,6 +33,7 @@ import py_trees
+ import py_trees_ros
+ import rclpy
+ from rclpy.action import ActionServer, CancelResponse, GoalResponse
++from rclpy.utilities import remove_ros_args
+ from tf2_ros import Buffer, TransformListener
+ 
+ 
+@@ -306,6 +308,37 @@ class MultiObjectPickPlaceOrchestrator:
+ 
+         return True
+ 
++    def _prepare_blackboard_for_goal(
++        self, goal_mode, goal_target_poses, goal_class_ids
++    ) -> None:
++        """Install a goal and clear terminal state from any previous run."""
++        previous_status = (
++            self.blackboard.workflow_status
++            if self.blackboard.exists('workflow_status')
++            else MultiObjectPickAndPlace.Result.UNKNOWN
++        )
++
++        # Preserve perception that was staged while waiting for the first goal.
++        # A later goal must not inherit DONE objects or queued IDs from the
++        # previous run.
++        if previous_status != MultiObjectPickAndPlace.Result.UNKNOWN:
++            self.blackboard.object_info_cache = None
++            self.blackboard.next_object_id = collections.deque()
++            self.blackboard.selected_object_id = None
++            self.blackboard.active_obj_id = None
++            self.blackboard.goal_drop_pose = None
++
++        self.blackboard.target_poses = goal_target_poses
++        self.blackboard.class_ids = goal_class_ids
++        self.blackboard.mode = goal_mode
++        self.blackboard.abort_motion = False
++        self.blackboard.workflow_summary = ''
++        self.blackboard.workflow_feedback_queue = collections.deque()
++
++        # Set this last: the behavior-tree completion guard resumes as soon as
++        # the status becomes UNKNOWN.
++        self.blackboard.workflow_status = MultiObjectPickAndPlace.Result.UNKNOWN
++
+     # Action server callback methods
+     def execute_callback(self, goal_handle):
+         """Handle execute request from action client."""
+@@ -319,9 +352,11 @@ class MultiObjectPickPlaceOrchestrator:
+         goal_class_ids = goal_handle.request.class_ids
+ 
+         self.logger.info('Updating blackboard with goal values')
+-        self.blackboard.target_poses = goal_target_poses
+-        self.blackboard.class_ids = goal_class_ids
+-        self.blackboard.mode = goal_mode
++        self._prepare_blackboard_for_goal(
++            goal_mode,
++            goal_target_poses,
++            goal_class_ids,
++        )
+ 
+         # Initialize feedback object
+         feedback = MultiObjectPickAndPlace.Feedback()
+@@ -329,7 +364,10 @@ class MultiObjectPickPlaceOrchestrator:
+         # Initialize workflow status
+         workflow_status = MultiObjectPickAndPlace.Result.UNKNOWN
+ 
+-        while rclpy.ok() and not goal_handle.is_cancel_requested:
++        while (
++                rclpy.ok() and
++                not self._shutdown_event.is_set() and
++                not goal_handle.is_cancel_requested):
+             # Check for workflow feedback messages and publish if available
+             if (self.blackboard.exists('workflow_feedback_queue') and
+                     self.blackboard.workflow_feedback_queue):
+@@ -348,6 +386,10 @@ class MultiObjectPickPlaceOrchestrator:
+             if workflow_status != MultiObjectPickAndPlace.Result.UNKNOWN:
+                 break
+ 
++            # Release the GIL while waiting for the behavior tree to update the
++            # blackboard. A tight loop here can starve the tree-tick thread.
++            self._shutdown_event.wait(timeout=0.01)
++
+         # Handle goal cancellation
+         if goal_handle.is_cancel_requested:
+             self.logger.warning('Goal is being canceled')
+@@ -452,8 +494,9 @@ class MultiObjectPickPlaceOrchestrator:
+             # Start ticking the tree with 100Hz
+             self.tree.tick_tock(10.0)
+             while rclpy.ok() and not self._shutdown_event.is_set():
+-                # Do nothing as the executor is spinning in the background
+-                pass
++                # Release the GIL while the executor and tree run in their
++                # background threads.
++                self._shutdown_event.wait(timeout=0.1)
+ 
+         except KeyboardInterrupt:
+             self.logger.info('KeyboardInterrupt, shutting down.\n')
+@@ -515,7 +558,9 @@ def main():
+                               '"Rizon4s-062840_"); prepended to attach/detach '
+                               'frame names.'))
+ 
+-    args = parser.parse_args()
++    # ROS parameters are passed after ``--ros-args`` by the launch file. Keep
++    # them in sys.argv for rclpy.init(), but hide them from this private parser.
++    args = parser.parse_args(remove_ros_args()[1:])
+ 
+     # Create and run the orchestrator
+     orchestrator = MultiObjectPickPlaceOrchestrator(
+diff --git a/isaac_ros_manipulation_pick_and_place/launch/orchestration.launch.py b/isaac_ros_manipulation_pick_and_place/launch/orchestration.launch.py
+index 136724b..50d7001 100644
+--- a/isaac_ros_manipulation_pick_and_place/launch/orchestration.launch.py
++++ b/isaac_ros_manipulation_pick_and_place/launch/orchestration.launch.py
+@@ -29,6 +29,8 @@ def launch_setup(context, *args, **kwargs):
+         LaunchConfiguration('manual_mode'))).lower() == 'true'
+     frame_prefix = str(context.perform_substitution(
+         LaunchConfiguration('frame_prefix')))
++    use_sim_time = str(context.perform_substitution(
++        LaunchConfiguration('use_sim_time'))).lower()
+ 
+     cmd_args = [
+         'ros2', 'run', 'isaac_ros_manipulation_pick_and_place', 'multi_object_pick_and_place',
+@@ -42,6 +44,7 @@ def launch_setup(context, *args, **kwargs):
+     if manual_mode:
+         cmd_args.append('--manual-mode')
+     cmd_args.extend(['--frame_prefix', frame_prefix])
++    cmd_args.extend(['--ros-args', '-p', f'use_sim_time:={use_sim_time}'])
+ 
+     headless = str(context.perform_substitution(
+         LaunchConfiguration('headless'))).lower() == 'true'
+@@ -96,6 +99,12 @@ def generate_launch_description():
+             description=('TF prefix from the bringup config (e.g. '
+                          '"Rizon4s-062840_"); empty for bare frame names.'),
+         ),
++        DeclareLaunchArgument(
++            'use_sim_time',
++            default_value='false',
++            choices=['true', 'false'],
++            description='Use the simulation clock for behavior-tree nodes and TF stamps.',
++        ),
+     ]
+ 
+     group_action = GroupAction(
+diff --git a/isaac_ros_manipulation_pick_and_place/test/test_motion_workflow_order.py b/isaac_ros_manipulation_pick_and_place/test/test_motion_workflow_order.py
+new file mode 100644
+index 0000000..a6555fe
+--- /dev/null
++++ b/isaac_ros_manipulation_pick_and_place/test/test_motion_workflow_order.py
+@@ -0,0 +1,60 @@
++# SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
++# Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++# http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++#
++# SPDX-License-Identifier: Apache-2.0
++
++"""Structural regressions for attachment, planning, and release ordering."""
++
++import os
++
++from ament_index_python.packages import get_package_share_directory
++from isaac_ros_manipulation_orchestration.utils.behavior_tree_config import (
++    BehaviorTreeConfigInitializer,
++)
++from isaac_ros_manipulation_pick_and_place.behavior_trees.motion_subtrees.motion_workflows import (
++    create_motion_subtree,
++)
++
++
++def _motion_tree():
++    package = 'isaac_ros_manipulation_pick_and_place'
++    params = os.path.join(
++        get_package_share_directory(package),
++        'params',
++        'multi_object_pick_and_place_behavior_tree_params.yaml',
++    )
++    return create_motion_subtree(
++        BehaviorTreeConfigInitializer(
++            behavior_tree_params_file=params,
++            package_name=package,
++        )
++    )
++
++
++def test_drop_planning_waits_for_post_attachment_joint_state():
++    child_names = [child.name for child in _motion_tree().children]
++    assert child_names.index('Retry Attach Object') < child_names.index(
++        'Wait for Fresh Joint State')
++    assert child_names.index('Wait for Fresh Joint State') < child_names.index(
++        'Drop')
++
++
++def test_drop_detaches_before_opening_the_jaws():
++    motion = _motion_tree()
++    drop = next(child for child in motion.children if child.name == 'Drop')
++    child_names = [child.name for child in drop.children]
++    assert child_names.index('Detach Object') < child_names.index(
++        'Open Gripper Subtree')
++    assert 'Detach Object' not in [child.name for child in motion.children]
+diff --git a/isaac_ros_manipulation_pick_and_place/test/test_orchestrator_scheduling.py b/isaac_ros_manipulation_pick_and_place/test/test_orchestrator_scheduling.py
+new file mode 100644
+index 0000000..75755cf
+--- /dev/null
++++ b/isaac_ros_manipulation_pick_and_place/test/test_orchestrator_scheduling.py
+@@ -0,0 +1,142 @@
++# SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
++# Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++# http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++#
++# SPDX-License-Identifier: Apache-2.0
++
++"""Regressions for cooperative orchestrator thread scheduling."""
++
++from collections import deque
++from types import SimpleNamespace
++from unittest.mock import Mock, patch
++
++from isaac_ros_manipulation_interfaces.action import MultiObjectPickAndPlace
++from isaac_ros_manipulation_pick_and_place.scripts.multi_object_pick_and_place import (
++    MultiObjectPickPlaceOrchestrator,
++)
++
++
++RCLPY_OK = (
++    'isaac_ros_manipulation_pick_and_place.scripts.'
++    'multi_object_pick_and_place.rclpy.ok'
++)
++
++
++class _UnknownStatusBlackboard:
++    workflow_status = MultiObjectPickAndPlace.Result.UNKNOWN
++
++    def exists(self, key):
++        return key == 'workflow_status'
++
++
++class _MutableBlackboard(SimpleNamespace):
++
++    def exists(self, key):
++        return hasattr(self, key)
++
++
++def test_new_goal_clears_terminal_workflow_state_before_resuming_tree():
++    orchestrator = object.__new__(MultiObjectPickPlaceOrchestrator)
++    orchestrator.blackboard = _MutableBlackboard(
++        workflow_status=MultiObjectPickAndPlace.Result.SUCCESS,
++        object_info_cache={0: {'status': 'DONE'}},
++        next_object_id=deque([0]),
++        selected_object_id=0,
++        active_obj_id=0,
++        goal_drop_pose=object(),
++        abort_motion=True,
++        workflow_summary='old result',
++        workflow_feedback_queue=deque(['old feedback']),
++    )
++    target_poses = [object()]
++
++    orchestrator._prepare_blackboard_for_goal(
++        MultiObjectPickAndPlace.Goal.SINGLE_BIN,
++        target_poses,
++        [],
++    )
++
++    assert orchestrator.blackboard.object_info_cache is None
++    assert orchestrator.blackboard.next_object_id == deque()
++    assert orchestrator.blackboard.selected_object_id is None
++    assert orchestrator.blackboard.active_obj_id is None
++    assert orchestrator.blackboard.goal_drop_pose is None
++    assert orchestrator.blackboard.target_poses is target_poses
++    assert orchestrator.blackboard.workflow_status == (
++        MultiObjectPickAndPlace.Result.UNKNOWN
++    )
++
++
++def test_first_goal_preserves_pose_estimation_staged_before_goal_arrival():
++    staged_cache = {0: {'status': 'READY_FOR_MOTION'}}
++    orchestrator = object.__new__(MultiObjectPickPlaceOrchestrator)
++    orchestrator.blackboard = _MutableBlackboard(
++        workflow_status=MultiObjectPickAndPlace.Result.UNKNOWN,
++        object_info_cache=staged_cache,
++        next_object_id=deque([0]),
++        selected_object_id=0,
++        active_obj_id=None,
++        goal_drop_pose=None,
++        abort_motion=False,
++        workflow_summary='',
++        workflow_feedback_queue=deque(),
++    )
++
++    orchestrator._prepare_blackboard_for_goal(
++        MultiObjectPickAndPlace.Goal.SINGLE_BIN,
++        [object()],
++        [],
++    )
++
++    assert orchestrator.blackboard.object_info_cache is staged_cache
++    assert orchestrator.blackboard.next_object_id == deque([0])
++
++
++def test_execute_callback_releases_gil_while_workflow_is_running():
++    orchestrator = object.__new__(MultiObjectPickPlaceOrchestrator)
++    orchestrator.logger = Mock()
++    orchestrator.blackboard = _UnknownStatusBlackboard()
++    orchestrator._shutdown_event = Mock()
++    orchestrator._shutdown_event.is_set.side_effect = [False, True]
++    orchestrator.is_orchestrator_busy = True
++
++    goal_handle = Mock()
++    goal_handle.request = SimpleNamespace(
++        mode=MultiObjectPickAndPlace.Goal.SINGLE_BIN,
++        target_poses=SimpleNamespace(poses=[]),
++        class_ids=[],
++    )
++    goal_handle.is_cancel_requested = False
++
++    with patch(RCLPY_OK, return_value=True):
++        orchestrator.execute_callback(goal_handle)
++
++    orchestrator._shutdown_event.wait.assert_called_once_with(timeout=0.01)
++    goal_handle.abort.assert_called_once()
++
++
++def test_normal_mode_releases_gil_while_background_threads_run():
++    orchestrator = object.__new__(MultiObjectPickPlaceOrchestrator)
++    orchestrator.logger = Mock()
++    orchestrator.tree = Mock()
++    orchestrator._shutdown_event = Mock()
++    orchestrator._shutdown_event.is_set.side_effect = [False, True]
++    orchestrator.shutdown = Mock()
++
++    with patch(RCLPY_OK, return_value=True):
++        orchestrator._run_normal_mode()
++
++    orchestrator.tree.tick_tock.assert_called_once_with(10.0)
++    orchestrator._shutdown_event.wait.assert_called_once_with(timeout=0.1)
++    orchestrator.shutdown.assert_called_once()
+diff --git a/isaac_ros_manipulation_pick_and_place/test/test_workflow_completion_guard.py b/isaac_ros_manipulation_pick_and_place/test/test_workflow_completion_guard.py
+new file mode 100644
+index 0000000..fedb465
+--- /dev/null
++++ b/isaac_ros_manipulation_pick_and_place/test/test_workflow_completion_guard.py
+@@ -0,0 +1,55 @@
++# SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
++# Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++# http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++#
++# SPDX-License-Identifier: Apache-2.0
++
++"""Regressions for stopping the tree after a terminal workflow result."""
++
++from types import SimpleNamespace
++
++from isaac_ros_manipulation_interfaces.action import MultiObjectPickAndPlace
++from isaac_ros_manipulation_pick_and_place.behavior_trees.multi_object_pick_and_place_bt import (
++    check_workflow_pending,
++)
++import pytest
++
++
++class _Blackboard(SimpleNamespace):
++
++    def exists(self, key):
++        return hasattr(self, key)
++
++
++def test_unknown_workflow_status_keeps_tree_running():
++    blackboard = _Blackboard(
++        workflow_status=MultiObjectPickAndPlace.Result.UNKNOWN)
++    assert check_workflow_pending(blackboard)
++
++
++@pytest.mark.parametrize(
++    'status',
++    [
++        MultiObjectPickAndPlace.Result.SUCCESS,
++        MultiObjectPickAndPlace.Result.PARTIAL_SUCCESS,
++        MultiObjectPickAndPlace.Result.FAILED,
++        MultiObjectPickAndPlace.Result.INCOMPLETE,
++    ],
++)
++def test_terminal_workflow_status_stops_tree(status):
++    assert not check_workflow_pending(_Blackboard(workflow_status=status))
++
++
++def test_missing_workflow_status_stops_tree():
++    assert not check_workflow_pending(_Blackboard())
+diff --git a/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/config.py b/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/config.py
+index d2e9cc0..b2543c5 100644
+--- a/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/config.py
++++ b/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/config.py
+@@ -207,6 +207,15 @@ _GRIPPER_COLLISION_LINKS: Dict[GripperType, List[str]] = {
+         'right_finger_mount',
+         'right_finger_tip',
+     ],
++    # The only three gripper links in rebot_b601dm_description that carry a
++    # <collision> element. gripper_tcp is deliberately excluded: it is a
++    # massless, geometry-free frame, so listing it would ask the
++    # object-attachment code to ignore collisions on a link that has none.
++    GripperType.REBOT_PARALLEL: [
++        'gripper_link',
++        'gripper_left',
++        'gripper_right',
++    ],
+ }
+ 
+ 
+@@ -298,7 +307,8 @@ def build_driver_config(context: LaunchContext) -> DriverConfig:
+     Build the vendor-specific :class:`DriverConfig` for the running robot.
+ 
+     Dispatches on the ``robot_type`` launch arg to the correct vendor subclass
+-    (currently ``UrRobotiqDriverConfig`` or ``FlexivRizonDriverConfig``). The
++    (``UrRobotiqDriverConfig``, ``FlexivRizonDriverConfig`` or
++    ``ReBotDriverConfig``). The
+     vendor imports are performed lazily inside this function to avoid import
+     cycles: the vendor driver_utils packages depend on this package for the
+     ``DriverConfig`` base class, so this package cannot import them at module
+@@ -327,6 +337,11 @@ def build_driver_config(context: LaunchContext) -> DriverConfig:
+             FlexivRizonDriverConfig,
+         )
+         return FlexivRizonDriverConfig(context)
++    if robot_type is RobotType.REBOT:
++        from isaac_ros_manipulation_rebot_driver_utils.config import (
++            ReBotDriverConfig,
++        )
++        return ReBotDriverConfig(context)
+     raise NotImplementedError(f'Robot type {robot_type} not supported')
+ 
+ 
+@@ -374,15 +389,27 @@ class IsaacSimCameraConfig(CameraConfig):
+     def __init__(self, context: LaunchContext):
+         super().__init__(context)
+         self.camera_type = CameraType.ISAAC_SIM
+-        self.color_camera_topic_name = '/front_stereo_camera/left/image_raw'
+-        self.depth_camera_topic_name = '/front_stereo_camera/depth/ground_truth'
+-        self.color_camera_info_topic_name = '/front_stereo_camera/left/camera_info'
+-        self.depth_camera_info_topic_name = '/front_stereo_camera/left/camera_info'
+-        self.rgb_image_width = str(constants.HAWK_IMAGE_WIDTH)
+-        self.rgb_image_height = str(constants.HAWK_IMAGE_HEIGHT)
+-        self.depth_image_width = str(constants.HAWK_IMAGE_WIDTH)
+-        self.depth_image_height = str(constants.HAWK_IMAGE_HEIGHT)
+-        self.num_cameras = '1'
++        # DETECTION/POSE CAMERA = the static scene_cam_0 (a fixed tabletop RGB-D
++        # camera aimed at the workspace), NOT the wrist camera. At the inspection
++        # pose the wrist camera points at a wall and sees no object, so Grounding
++        # DINO returned empty detections; scene_cam_0 sees the whole workspace.
++        # scene_cam_0 images are tagged frame 'scene_cam_0' whose TF pick_scene.py
++        # publishes, so FoundationPose transforms the 6DOF pose correctly. nvblox
++        # and the robot segmenter still get all camera depths fused separately.
++        self.color_camera_topic_name = '/scene_cam_0/rgb/image_raw'
++        self.depth_camera_topic_name = '/scene_cam_0/depth/image_raw'
++        self.color_camera_info_topic_name = '/scene_cam_0/camera_info'
++        self.depth_camera_info_topic_name = '/scene_cam_0/camera_info'
++        # scene_cam_0 renders 640x480 (sim/pick_scene.py SCENE_CAM_W/H), NOT the
++        # HAWK 1920x1200 the base class assumes. These dims drive the mask-resize
++        # node: /segmentation is emitted at depth_image_width x depth_image_height
++        # and FoundationPose pairs it with the same-sized depth. Leaving HAWK here
++        # produced a 1920x1200 mask over 640x480 depth, so FoundationPose never
++        # produced a pose and /get_object_pose timed out. See constants comment.
++        self.rgb_image_width = str(constants.SCENE_CAM_IMAGE_WIDTH)
++        self.rgb_image_height = str(constants.SCENE_CAM_IMAGE_HEIGHT)
++        self.depth_image_width = str(constants.SCENE_CAM_IMAGE_WIDTH)
++        self.depth_image_height = str(constants.SCENE_CAM_IMAGE_HEIGHT)
+         self.use_sim_time = True
+ 
+ 
+@@ -1432,9 +1459,13 @@ class CoreConfig(Config):
+         )
+ 
+         self.depth_estimation_config = DepthEstimationConfig(context)
+-        if self.camera_type == CameraType.ISAAC_SIM and self.num_cameras != 1:
+-            raise NotImplementedError(f'Camera type of isaac sim only support 1 camera'
+-                                      f', not {self.num_cameras}')
++        if (
++            self.camera_type == CameraType.ISAAC_SIM
++            and not 1 <= self.num_cameras <= 2
++        ):
++            raise NotImplementedError(
++                'Isaac Sim supports one wrist camera or two fixed scene cameras, '
++                f'not {self.num_cameras}')
+         self.camera_config = get_camera_config(context, self.camera_type)
+ 
+         self.object_selection_config = ObjectSelectionConfig(context)
+diff --git a/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/constants.py b/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/constants.py
+index 2d5c9e6..98e3e7a 100644
+--- a/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/constants.py
++++ b/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/constants.py
+@@ -23,6 +23,16 @@ HAWK_IMAGE_HEIGHT = 1200
+ REALSENSE_IMAGE_WIDTH = 1280
+ REALSENSE_IMAGE_HEIGHT = 720
+ 
++# The sim scene_cam_0 (a static tabletop RGB-D camera) renders at 640x480 --
++# see sim/pick_scene.py SCENE_CAM_W/SCENE_CAM_H. These MUST match the real render
++# resolution: the segmentation-mask resize node emits /segmentation at these
++# dims, and FoundationPose pairs that mask with the same-sized depth image. A
++# mismatch (e.g. leaving HAWK 1920x1200 here) yields a mask FoundationPose cannot
++# apply to a 640x480 depth image, so it never produces a pose and the
++# /get_object_pose action times out.
++SCENE_CAM_IMAGE_WIDTH = 640
++SCENE_CAM_IMAGE_HEIGHT = 480
++
+ ESS_INPUT_IMAGE_WIDTH = 960
+ ESS_INPUT_IMAGE_HEIGHT = 576
+ 
+diff --git a/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/launch_utils.py b/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/launch_utils.py
+index 87ad63f..4e4c7d8 100644
+--- a/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/launch_utils.py
++++ b/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/launch_utils.py
+@@ -173,7 +173,7 @@ def get_robot_type(context: LaunchContext) -> RobotType:
+     Resolve the ``robot_type`` launch arg to a ``RobotType`` enum.
+ 
+     The launch arg value must match one of the ``RobotType`` members
+-    (case-sensitive, e.g. ``UR`` or ``FLEXIV``).
++    (case-sensitive, e.g. ``UR``, ``FLEXIV`` or ``REBOT``).
+ 
+     Args
+     ----
+@@ -194,6 +194,8 @@ def get_robot_type(context: LaunchContext) -> RobotType:
+         return RobotType.UR
+     elif robot_type_str == str(RobotType.FLEXIV):
+         return RobotType.FLEXIV
++    elif robot_type_str == str(RobotType.REBOT):
++        return RobotType.REBOT
+     else:
+         raise NotImplementedError(f'Robot type {robot_type_str} not supported !')
+ 
+@@ -453,13 +455,27 @@ def _ur_frame_prefix(context: LaunchContext) -> str:
+     return tf_prefix or ''
+ 
+ 
++def _rebot_frame_prefix(context: LaunchContext) -> str:
++    # The reBot description macros take a ``prefix`` arg (not ``tf_prefix``, not
++    # ``robot_sn``), defaulting to ''. Do NOT route reBot through
++    # _flexiv_frame_prefix: that helper raises when robot_sn is empty and the
++    # reBot has no serial-number-prefixed frames.
++    try:
++        prefix = get_str_variable(context, 'prefix')
++    except Exception:
++        # Optional for reBot: the description xacro defaults prefix to ''.
++        return ''
++    return prefix or ''
++
++
+ def compute_frame_prefix(context: LaunchContext) -> str:
+     """
+     Derive the TF frame prefix for the running robot.
+ 
+     The prefix is resolved using the canonical launch arg for the given robot
+-    family (``robot_sn`` for Flexiv, ``tf_prefix`` for UR). The robot family
+-    is resolved from the ``robot_type`` launch arg via :func:`get_robot_type`.
++    family (``robot_sn`` for Flexiv, ``tf_prefix`` for UR, ``prefix`` for
++    reBot). The robot family is resolved from the ``robot_type`` launch arg via
++    :func:`get_robot_type`.
+ 
+     Args
+     ----
+@@ -480,6 +496,8 @@ def compute_frame_prefix(context: LaunchContext) -> str:
+         return _flexiv_frame_prefix(context)
+     if robot_type is RobotType.UR:
+         return _ur_frame_prefix(context)
++    if robot_type is RobotType.REBOT:
++        return _rebot_frame_prefix(context)
+     raise ValueError(f'Robot type {robot_type} not supported')
+ 
+ 
+@@ -493,8 +511,10 @@ def compute_joint_names(context: LaunchContext) -> List[str]:
+     """
+     Return arm joint names for the running robot.
+ 
+-    Flexiv Rizon exposes ``joint1``..``joint7`` and UR exposes the 6 standard
+-    shoulder/elbow/wrist joints. The final names are prefixed with
++    Flexiv Rizon exposes ``joint1``..``joint7``, UR exposes the 6 standard
++    shoulder/elbow/wrist joints, and the reBot B601-DM exposes ``joint1``..
++    ``joint6``. Gripper/jaw joints are never included. The final names are
++    prefixed with
+     :func:`compute_frame_prefix`. The robot family is resolved from the
+     ``robot_type`` launch arg via :func:`get_robot_type`.
+ 
+@@ -518,13 +538,68 @@ def compute_joint_names(context: LaunchContext) -> List[str]:
+         return [f'{prefix}joint{i}' for i in range(1, 8)]
+     if robot_type is RobotType.UR:
+         return [f'{prefix}{j}' for j in _UR_ARM_JOINTS]
++    if robot_type is RobotType.REBOT:
++        # 6 revolute joints, joint1..joint6. NOT range(1, 8) like Flexiv: a
++        # fabricated joint7 is not in the reBot URDF. The jaw joints
++        # (gripper_joint1 / gripper_joint2) are deliberately excluded; this
++        # function returns ARM joints only, matching both existing families.
++        return [f'{prefix}joint{i}' for i in range(1, 7)]
+     raise ValueError(f'Robot type {robot_type} not supported')
+ 
+ 
++# Gripper types these dispatchers know about. An unrecognized gripper type used
++# to fall through to the Robotiq branch, which silently handed Robotiq's
++# knuckle-angle values (open=0.0, close=0.65 rad) to whatever gripper was
++# actually mounted. For the reBot that inverts the open/close sense AND
++# overtravels the prismatic jaw by 9x, so the fall-through is now guarded: only
++# a gripper explicitly listed here may receive the Robotiq defaults.
++_ROBOTIQ_GRIPPER_TYPES: Tuple[str, ...] = (
++    GripperType.ROBOTIQ_2F_140.value,
++    GripperType.ROBOTIQ_2F_85.value,
++)
++
++
++def _reject_unknown_gripper(gripper_type: str, dispatcher: str) -> None:
++    """
++    Raise unless ``gripper_type`` is one of the Robotiq grippers.
++
++    Called at the tail of each gripper dispatcher, where a bare ``return
++    <robotiq value>`` used to sit. Guarding here rather than adding an
++    ``else: raise`` to each dispatcher keeps the failure message identical
++    across all three.
++
++    Raises
++    ------
++        NotImplementedError: If ``gripper_type`` is not a Robotiq gripper and
++            therefore must not be given Robotiq defaults.
++
++    """
++    if gripper_type not in _ROBOTIQ_GRIPPER_TYPES:
++        raise NotImplementedError(
++            f'Gripper type {gripper_type!r} is not handled by {dispatcher}(). '
++            f'Refusing to fall through to the Robotiq defaults, which would '
++            f'silently command Robotiq values to a different gripper. Add an '
++            f'explicit branch for {gripper_type!r} (known types: '
++            f'{[g.value for g in GripperType]}).')
++
++
+ def compute_gripper_action_name(gripper_type: str) -> str:
+-    """Return gripper GripperCommand action name based on gripper type."""
+-    if gripper_type == 'grav':
++    """
++    Return gripper GripperCommand action name based on gripper type.
++
++    Raises
++    ------
++        NotImplementedError: If the gripper type has no explicit branch.
++
++    """
++    if gripper_type == GripperType.GRAV.value:
+         return '/flexiv_gripper_node/gripper_action'
++    if gripper_type == GripperType.REBOT_PARALLEL.value:
++        # UNDETERMINED: no reBot gripper action server exists yet. This name
++        # follows the Robotiq convention and must be reconciled with whatever
++        # node the gripper stage actually brings up.
++        return '/rebot_gripper_controller/gripper_cmd'
++    _reject_unknown_gripper(gripper_type, 'compute_gripper_action_name')
+     return '/robotiq_gripper_controller/gripper_cmd'
+ 
+ 
+@@ -534,9 +609,24 @@ def compute_gripper_positions(gripper_type: str) -> tuple:
+ 
+     Grav gripper: 0.0 = fully closed, 0.1 = fully open.
+     Robotiq gripper: 0.0 = fully open, 0.65 = fully closed.
++    reBot parallel jaw: 0.0 = fully closed, 0.0715 = fully open. Units are
++    METRES of prismatic travel per jaw, not radians of knuckle rotation. Both
++    jaws mirror (gripper_joint2 mimics gripper_joint1 with multiplier +1.0), so
++    a command is a HALF-gap: 0.030 gives a 60 mm opening between the jaws and
++    the 0.0715 full-open value gives 143 mm. Same polarity as Grav, the
++    opposite of Robotiq. These match the ``open`` / ``closed`` group states in
++    the reBot SRDF exactly; if either changes, both must change together.
++
++    Raises
++    ------
++        NotImplementedError: If the gripper type has no explicit branch.
++
+     """
+-    if gripper_type == 'grav':
++    if gripper_type == GripperType.GRAV.value:
+         return (0.09, 0.0)
++    if gripper_type == GripperType.REBOT_PARALLEL.value:
++        return (0.0715, 0.0)
++    _reject_unknown_gripper(gripper_type, 'compute_gripper_positions')
+     return (0.0, 0.65)
+ 
+ 
+@@ -546,7 +636,19 @@ def compute_gripper_settle_time(gripper_type: str) -> float:
+ 
+     The Flexiv Grav action server returns before the gripper finishes moving,
+     so we need an extra delay.  Robotiq's controller blocks until done.
++
++    Raises
++    ------
++        NotImplementedError: If the gripper type has no explicit branch.
++
+     """
+-    if gripper_type == 'grav':
++    if gripper_type == GripperType.GRAV.value:
+         return 2.0
++    if gripper_type == GripperType.REBOT_PARALLEL.value:
++        # Redundant in value, not in intent: 0.0 was chosen, not inherited.
++        # UNDETERMINED whether the reBot gripper action server blocks until
++        # motion completes. If it returns early like the Grav server, this
++        # needs a nonzero value or grasps will be attempted mid-close.
++        return 0.0
++    _reject_unknown_gripper(gripper_type, 'compute_gripper_settle_time')
+     return 0.0
+diff --git a/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/manipulator_types.py b/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/manipulator_types.py
+index e1d2500..62ba45c 100644
+--- a/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/manipulator_types.py
++++ b/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/manipulator_types.py
+@@ -24,6 +24,7 @@ class GripperType(enum.Enum):
+     ROBOTIQ_2F_140 = 'robotiq_2f_140'
+     ROBOTIQ_2F_85 = 'robotiq_2f_85'
+     GRAV = 'grav'
++    REBOT_PARALLEL = 'rebot_parallel'
+ 
+     @classmethod
+     def get_gripper_type(self, gripper_type: str):
+@@ -45,6 +46,8 @@ class GripperType(enum.Enum):
+             return GripperType.ROBOTIQ_2F_85
+         elif gripper_type == GripperType.GRAV.value:
+             return GripperType.GRAV
++        elif gripper_type == GripperType.REBOT_PARALLEL.value:
++            return GripperType.REBOT_PARALLEL
+         else:
+             raise NotImplementedError(f'Gripper type {gripper_type} not supported')
+ 
+@@ -214,6 +217,7 @@ class RobotType(ManipulatorEnum):
+ 
+     UR = 'UR'
+     FLEXIV = 'FLEXIV'
++    REBOT = 'REBOT'
+ 
+ 
+ class ObjectStatus(enum.Enum):
+diff --git a/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/perception.py b/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/perception.py
+index be64765..1528b2d 100644
+--- a/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/perception.py
++++ b/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/perception.py
+@@ -189,7 +189,14 @@ def get_foundation_pose_nodes(camera_config: CameraConfig,
+                 'input_qos': pose_estimation_config.input_qos,
+                 'output_qos': 'DEFAULT',
+                 'network_image_height': object_detection_config.network_image_height,
+-                'network_image_width': object_detection_config.network_image_width
++                'network_image_width': object_detection_config.network_image_width,
++                # Same as the RTDETR branch above: the FP-server-timeline camera_info
++                # that grounding_dino.launch.py's camera_info_scaler feeds into
++                # resize_mask_node so the mask and its camera_info share a timeline
++                # (else resize_mask_node's GXF sync never pairs them and
++                # /segmentation stays empty -> FoundationPose times out).
++                'foundationpose_server_input_camera_info_topic':
++                    pose_estimation_config.fp_out_camera_info_topic_name
+             }.items(),
+         ))
+ 
+diff --git a/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/workflows.py b/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/workflows.py
+index 4b1c421..7fa9e08 100644
+--- a/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/workflows.py
++++ b/isaac_ros_manipulation_ros_python_utils/isaac_ros_manipulation_ros_python_utils/workflows.py
+@@ -201,6 +201,7 @@ def get_multi_object_pick_and_place(
+             'manual_mode': orchestration_config.manual_mode,
+             'log_level': orchestration_config.log_level,
+             'headless': str(orchestration_config.headless),
++            'use_sim_time': str(orchestration_config.use_sim_time).lower(),
+             # From bringup `robot_sn` / `tf_prefix`; empty when unused.
+             'frame_prefix': orchestration_config.frame_prefix,
+         }.items(),
+diff --git a/isaac_ros_manipulation_bringup/launch/workflows/core.launch.py b/isaac_ros_manipulation_bringup/launch/workflows/core.launch.py
+index ac04d96..360e75c 100644
+--- a/isaac_ros_manipulation_bringup/launch/workflows/core.launch.py
++++ b/isaac_ros_manipulation_bringup/launch/workflows/core.launch.py
+@@ -66,7 +66,15 @@ def generate_launch_description():
+             'gripper_type',
+             default_value='robotiq_2f_140',
+             description='Type of gripper attached to the robot arm',
+-            choices=['robotiq_2f_85', 'robotiq_2f_140', 'grav'],
++            # Keep this in sync with GripperType.REBOT_PARALLEL in the patched
++            # manipulation utilities. Otherwise launch rejects the reBot
++            # profile before any workflow node starts.
++            choices=[
++                'robotiq_2f_85',
++                'robotiq_2f_140',
++                'grav',
++                'rebot_parallel',
++            ],
+         ),
+         DeclareLaunchArgument(
+             'camera_type',
+diff --git a/isaac_ros_manipulation_asset_bringup/scripts/setup_perception_models.py b/isaac_ros_manipulation_asset_bringup/scripts/setup_perception_models.py
+--- a/isaac_ros_manipulation_asset_bringup/scripts/setup_perception_models.py
++++ b/isaac_ros_manipulation_asset_bringup/scripts/setup_perception_models.py
+@@ -266,11 +266,6 @@ class ModelSetup:
+            not (self.models_dir / 'foundationpose' / 'score_trt_engine.plan').exists():
+             self.logger.error('Foundation pose models not found, please check and verify.')
+ 
+-        # Also check if rtdetr models exists
+-        if not (self.models_dir / 'synthetica_detr').exists() or \
+-           not (self.models_dir / 'synthetica_detr' / 'sdetr_grasp.plan').exists():
+-            self.logger.error('Synthetica detr models not found, please check and verify.')
+-
+         self.logger.info('=== Setting up FoundationPose assets ===')
+         # Check if Mac and Cheese assets already exist
+         fp_dir = self.assets_dir / 'isaac_ros_foundationpose'

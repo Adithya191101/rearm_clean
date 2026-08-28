@@ -1,0 +1,244 @@
+# Workflow params for the reBot B601-DM in Isaac Sim. SIM PROFILE ONLY --
+# use_sim_time is 'true' here and must never be flipped in place. There is no
+# real-hardware profile: no physical reBot exists yet, so launch/rebot_driver.
+# launch.py raises on any non-sim request rather than pretending to support one.
+# A real profile needs its own params file (use_sim_time 'false', a real
+# ros2_control hardware plugin instead of TopicBasedSystem, and a real
+# joint_states source), not an edit to this one.
+#
+# Copied from isaac_ros_manipulation_bringup/params/sim_launch_params.yaml and
+# adapted. Every key here becomes a launch argument: drivers.launch.py forwards
+# the whole dict verbatim into robot_launch_file_path, so removing a key that a
+# downstream launch expects turns into an unsatisfied-argument error at bringup.
+# Only ur_type is dropped relative to upstream (nothing on this robot declares
+# it); everything else is retained even when unused on this robot.
+#
+# ---------------------------------------------------------------------------
+# HOW THIS FILE IS FOUND AT RUN TIME
+# ---------------------------------------------------------------------------
+# This is the one authored live profile. setup.py installs it into this package's
+# share/params directory, and launch/rebot_workflow.launch.py resolves that
+# installed path directly. config/workflows/rebot_sim_launch_params.yaml is a
+# compatibility symlink to this file; it is not a second editable copy.
+#
+# NOTE: never write a dollar-paren command substitution inside a comment here,
+# not even illustratively. load_yaml_params runs its command substitution over
+# the ENTIRE file text, comments included. A substitution that spans a newline
+# (or is malformed) executes as a broken shell command whose error text is
+# spliced back into the YAML, which then fails to parse on the colon in that
+# error. Keep every such substitution on a single logical line, and only in a
+# real value -- never demonstrate the syntax in prose.
+#
+# launch/rebot_workflow.launch.py fails if this packaged file is absent rather
+# than silently falling back to the upstream UR + Robotiq binary config.
+
+camera_type: ISAAC_SIM
+# Both fixed scene cameras feed the robot segmenter and nvblox. The wrist camera
+# remains the arm-mounted inspection stream but is not needed for obstacle
+# coverage while the arm moves.
+num_cameras: 2
+workflow_type: PICK_AND_PLACE
+robot_type: REBOT
+
+# Robot driver launch file. Isaac 4.5 is pluggable through this string, so no
+# NVIDIA-owned launch file has to be modified to bring up this robot.
+robot_launch_file_path: $(ros2 pkg prefix --share isaac_ros_manipulation_rebot_driver_utils)/launch/rebot_driver.launch.py
+
+gripper_type: rebot_parallel
+use_sim_time: 'true'
+headless: 'false'
+setup: sim_test_bench
+robot_ip: 192.56.1.2 # not used for sim
+log_level: error
+# The visible wall is still reconstructed by nvblox, but it is also preloaded as
+# a 10 mm-inflated hard planning object. This makes collision safety independent
+# of camera sparsity while preserving the ESDF path as live mapping evidence.
+moveit_collision_objects_scene_file: '$ISAAC_ROS_WS/config/scene_objects/rebot_transfer_wall.scene'
+
+# Robot description params
+urdf_path: $(ros2 pkg prefix --share isaac_ros_manipulation_rebot_robot_description)/urdf/rebot_sim.urdf.xacro
+srdf_path: $(ros2 pkg prefix --share isaac_ros_manipulation_rebot_robot_description)/srdf/rebot.srdf.xacro
+joint_limits_file_path: $(ros2 pkg prefix --share isaac_ros_manipulation_rebot_robot_description)/config/joint_limits.yaml
+kinematics_file_path: $(ros2 pkg prefix --share isaac_ros_manipulation_rebot_robot_description)/config/kinematics_sim.yaml
+moveit_controllers_file_path: $(ros2 pkg prefix --share isaac_ros_manipulation_rebot_robot_description)/config/moveit_sim_controllers.yaml
+ros2_controllers_file_path: $(ros2 pkg prefix --share isaac_ros_manipulation_rebot_robot_description)/config/ros2_control_controllers_sim.yaml
+controller_spawner_timeout: 10
+# UR-only leftovers. Kept because the Flexiv seed params keep them too: shared
+# launch files declare them unconditionally, so dropping them breaks bringup even
+# though nothing on this robot reads them.
+tf_prefix: ''
+runtime_config_package: 'ur_robot_driver'
+initial_joint_controller: 'scaled_joint_trajectory_controller'
+ur_calibration_file_path: ''
+
+# cuMotion-specific params
+#
+# Both paths are absolute workspace paths, NOT
+# $(ros2 pkg prefix --share isaac_ros_cumotion_robot_description)/... like the
+# UR seed. That vendor package is read-only in the container image, so installing
+# reBot artifacts into it is not possible; cuMotion reads whatever absolute path
+# it is handed.
+#
+# GRIPPER, not tool_free: this workflow plans with the parallel jaw attached, so
+# the collision model must include the gripper links. The tool_free pair exists
+# for bare-flange work and is referenced in the comment below so the alternative
+# is discoverable:
+#   $ISAAC_ROS_WS/src/rebot_b601dm_description/urdf/generated/rebot_b601dm_cumotion_tool_free.urdf
+#   $ISAAC_ROS_WS/config/xrdf/rebot_b601dm_tool_free.xrdf
+#
+# The URDF exists (generated by rebot_b601dm_description). The XRDF is owned by
+# another stage and may not exist yet; cuMotion will fail to load until it does.
+cumotion_urdf_file_path: $ISAAC_ROS_WS/src/rebot_b601dm_description/urdf/generated/rebot_b601dm_cumotion_gripper.urdf
+cumotion_xrdf_file_path: $ISAAC_ROS_WS/config/xrdf/rebot_b601dm_gripper.xrdf
+# /isaac_joint_states, matching the UR sim params rather than the Flexiv seed's
+# /joint_states: cuMotion wants the raw Isaac Sim stream, and it tolerates the
+# mimicked jaw that robot_state_publisher and MoveIt cannot consume.
+cumotion_joint_states_topic: /isaac_joint_states
+distance_threshold: 0.05
+# Required for the transfer wall: cuMotion reads the camera-built ESDF rather
+# than relying on a preloaded MoveIt collision object.
+enable_nvblox: 'true'
+# Global frame for nvblox ESDF
+nvblox_global_frame: 'base_link'
+
+# Visualization
+rviz_config_file: ''
+use_pose_from_rviz: 'false'
+
+# Time sync params to sync joint states and images
+time_sync_slop: 0.5
+
+# GEAR_ASSEMBLY is not supported on this robot: the reBot model has no
+# insertion_frame and no RL policy was trained for this gripper. The keys are
+# retained because shared launch files declare them unconditionally.
+gear_assembly_model_path: $ISAAC_ROS_WS/isaac_ros_assets/isaac_ros_manipulation_dnn_policy/
+gear_assembly_model_file_name: model_gripper_140.pt
+gear_assembly_policy_alpha: 0.0
+gear_assembly_observation_topic: /gear_assembly/observation
+gear_assembly_joint_state_topic: /isaac_joint_states
+gear_assembly_target_joint_state_topic: /isaac_joint_commands
+gear_assembly_target_tcp_state_topic: /gear_assembly/target_tcp_state
+gear_assembly_gear_insertion_request_topic: /gear_assembly/gear_insertion_request
+gear_assembly_goal_pose_topic: /gear_assembly/goal_pose
+gear_assembly_gear_insertion_status_topic: /gear_assembly/gear_insertion_status
+gear_assembly_ros_bag_folder_path: $ISAAC_ROS_WS/rl_inference_policy
+gear_assembly_enable_recording: 'false'
+gear_assembly_use_joint_state_planner: 'true'
+gear_assembly_peg_stand_mesh_file_path: $ISAAC_ROS_WS/isaac_ros_assets/isaac_ros_manipulation_dnn_policy/gear_base/gear_base.obj
+gear_assembly_gear_large_mesh_file_path: $ISAAC_ROS_WS/isaac_ros_assets/isaac_ros_manipulation_dnn_policy/gear_large/gear_large.obj
+gear_assembly_gear_small_mesh_file_path: $ISAAC_ROS_WS/isaac_ros_assets/isaac_ros_manipulation_dnn_policy/gear_small/gear_small.obj
+gear_assembly_gear_medium_mesh_file_path: $ISAAC_ROS_WS/isaac_ros_assets/isaac_ros_manipulation_dnn_policy/gear_medium/gear_medium.obj
+gear_assembly_use_ground_truth_pose_in_sim: 'true'
+gear_assembly_verify_pose_estimation_accuracy: 'false'
+gear_assembly_run_rl_inference: 'true'
+gear_assembly_output_dir: $ISAAC_ROS_WS/gear_assembly_outputs
+gear_assembly_offset_for_place_pose: 0.32
+gear_assembly_offset_for_insertion_pose: 0.0
+gear_assembly_place_pose_z_rotation_deg: 0.0
+gear_assembly_post_insertion_gripper_rotation_deg: 0.0
+gear_assembly_timeout_for_insertion_action_call: 7.0  # in seconds
+gear_assembly_model_frequency: 30.0  # in Hz
+
+# Perception
+#
+# LIVE PERCEPTION. core.py launches Grounding DINO, FoundationPose, and object
+# selection because use_ground_truth_pose_in_sim is false below. These enum
+# values and model paths are operational inputs, not placeholders.
+depth_type: ISAAC_SIM
+enable_dnn_depth_in_realsense: 'false'
+object_detection_type: GROUNDING_DINO
+selection_policy: HIGHEST_SCORE
+segmentation_type: NONE
+segment_anything_input_points_topic: input_points
+segment_anything_input_detections_topic: input_detections
+segment_anything_enable_debug_output: 'false'
+sam_model_repository_paths: ['$ISAAC_ROS_WS/isaac_ros_assets/models/triton']
+ess_full_engine_file_path: $ISAAC_ROS_WS/isaac_ros_assets/models/dnn_stereo_disparity/dnn_stereo_disparity_v4.1.0_onnx_trt10.13/ess.engine
+ess_light_engine_file_path: $ISAAC_ROS_WS/isaac_ros_assets/models/dnn_stereo_disparity/dnn_stereo_disparity_v4.1.0_onnx_trt10.13/light_ess.engine
+foundationstereo_low_res_engine_file_path: $ISAAC_ROS_WS/isaac_ros_assets/models/foundationstereo/deployable_foundation_stereo_small_v1.0/foundationstereo_320x736.engine
+foundationstereo_high_res_engine_file_path: $ISAAC_ROS_WS/isaac_ros_assets/models/foundationstereo/deployable_foundation_stereo_small_v1.0/foundationstereo_576x960.engine
+pose_estimation_type: FOUNDATION_POSE
+pose_estimation_input_qos: 'DEFAULT'
+pose_estimation_input_fps: '15'
+pose_estimation_dropped_fps: '10'
+dope_engine_file_path: $ISAAC_ROS_WS/isaac_ros_assets/models/dope/soup_can.engine
+dope_model_file_path: $ISAAC_ROS_WS/isaac_ros_assets/models/dope/soup_can.onnx
+
+foundation_pose_mesh_file_path: $ISAAC_ROS_WS/isaac_ros_assets/isaac_ros_foundationpose/soup_can/soup_can.obj
+foundation_pose_refine_engine_file_path: $ISAAC_ROS_WS/isaac_ros_assets/models/foundationpose/refine_trt_engine.plan
+foundation_pose_texture_path: $ISAAC_ROS_WS/isaac_ros_assets/isaac_ros_foundationpose/soup_can/baked_mesh_tex0.png
+foundation_pose_score_engine_file_path: $ISAAC_ROS_WS/isaac_ros_assets/models/foundationpose/score_trt_engine.plan
+
+grounding_dino_engine_file_path: $ISAAC_ROS_WS/isaac_ros_assets/models/grounding_dino/grounding_dino_model.plan
+grounding_dino_model_file_path: $ISAAC_ROS_WS/isaac_ros_assets/models/grounding_dino/grounding_dino_model.onnx
+grounding_dino_default_prompt: 'soup can.'
+grounding_dino_confidence_threshold: '0.6'
+grounding_dino_network_image_width: '960'
+grounding_dino_network_image_height: '544'
+
+rtdetr_engine_file_path: $ISAAC_ROS_WS/isaac_ros_assets/models/synthetica_detr/sdetr_grasp.plan
+object_class_id: '3' # Soup can
+rt_detr_confidence_threshold: '0.5'
+
+# Pick and place params
+# LIVE PERCEPTION: false un-skips core.py's detector+FoundationPose+object-selection
+# node block, so Grounding DINO ('soup can.' prompt) + FoundationPose 6DOF run
+# instead of reading the sim_gt_asset_frame_id.
+use_ground_truth_pose_in_sim: 'false'
+pick_and_place_planner_retries: 5
+pick_and_place_retry_wait_time: 5.0
+sim_gt_asset_frame_id: 'soup_can' # Is a value out of the list of TF's that are published by Isaac Sim usd asset (in the TF publishing action graphs)
+# Legacy workflow-level field. The active multi-object PICK_AND_PLACE behavior
+# reads grasp_file_path from config/pick_and_place/
+# multi_object_pick_and_place_blackboard_params.yaml.
+grasps_file_path: ''
+time_dilation_factor: '0.6' # This parameter is used to control the speed of the robot
+
+# For pick and place automated testing
+move_to_home_pose_after_place: 'false'
+home_pose: [-0.25, 0.2, 0.4, 0.034, 0.996, 0.066, 0.042]
+
+# Object Attachment params
+object_attachment_type: CUSTOM_MESH
+object_attachment_scale: [0.05, 0.05, 0.1]
+attach_object_mesh_file_path: $ISAAC_ROS_WS/isaac_ros_assets/isaac_ros_foundationpose/soup_can/soup_can.obj
+# Empty rather than a package:// URI: the reBot meshes are per-link STLs
+# (gripper_link.STL, gripper_left.STL, gripper_right.STL), not a single combined
+# end-effector mesh of the kind this key expects.
+end_effector_mesh_resource_uri: ''
+
+# Visualization
+# 'false': this workflow is launched headless in the container (no X display), so
+# rviz2 aborts at startup with "no Qt platform plugin (xcb) could be initialized"
+# and dies (exit -6). It does not cascade the launch down, but it is dead weight
+# and noise on every headless run. Nothing about the pick-and-place BT run needs
+# RViz; re-enable only when running with an X display bound into the container.
+enable_rviz_visualization: 'false'
+enable_foxglove_visualization: 'false'
+
+# Behavior tree params
+# reBot-specific values for NVIDIA's unmodified multi-object behavior tree.
+behavior_tree_config_file: ${ISAAC_ROS_MANIPULATION_PICK_AND_PLACE_CONFIG_DIR}/multi_object_pick_and_place_behavior_tree_params.yaml
+blackboard_config_file: ${ISAAC_ROS_MANIPULATION_PICK_AND_PLACE_CONFIG_DIR}/multi_object_pick_and_place_blackboard_params.yaml
+print_ascii_tree: 'false'
+manual_mode: 'false'
+
+# Nsight Profiling
+delay_to_start_nsight: '5' # In seconds
+nsight_profile_duration: '20' # In seconds
+nsight_profile_output_file_path: $ISAAC_ROS_WS/nsight_profile.nsys
+enable_nsight_profiling: 'false'
+enable_system_wide_profiling: 'false'
+
+# MPS parameters
+enable_cuda_mps: 'false'
+cuda_mps_pipe_directory: $ISAAC_ROS_WS/mps_pipe_dir  # Create this directory before running if mps = 'true'
+# For nvblox, foundation pose, rtdetr, dope, nitros type adaptation
+cuda_mps_active_thread_percentage_container: '100'
+cuda_mps_client_priority_container: '1'
+# For robot segmenter
+cuda_mps_client_priority_robot_segmenter: '1'
+cuda_mps_active_thread_percentage_robot_segmenter: '100'
+# For cuMotion planner
+cuda_mps_client_priority_planner: '0'  # We give this a higher priority to ensure that the planner is not starved
+cuda_mps_active_thread_percentage_planner: '100'

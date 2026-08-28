@@ -1,0 +1,1448 @@
+# Validated simulation artifact; do not hand-edit.
+#
+# cuMotion / cuRobo XRDF for the reBot B601-DM, gripper model.
+# Pairs with urdf/generated/rebot_b601dm_cumotion_gripper.urdf.
+#
+# SIM PROFILE ONLY. The camera bracket pose comes from config/extrinsics_sim.yaml.
+# config/extrinsics_real.yaml is deliberately NOT read: its camera_link offset is
+# a placeholder identity pending hand-eye calibration, and spheres built from an
+# uncalibrated extrinsic would encode a number nobody has measured.
+#
+# Every sphere was computed by voxelising each link's collision mesh in its own
+# frame and covering it deepest-voxel-first, with
+# each radius capped at that voxel's distance to the part's surface plus a fixed
+# 12 mm -- which BOUNDS how far a sphere can reach past real material instead of
+# merely hoping it does not. The minimal runtime overlay keeps this reviewed
+# output and omits the one-off authoring utilities.
+#
+# THE JAWS ARE NOT CSPACE JOINTS. cspace is joint1..joint6 only. cuMotion LOCKS
+# every controlled joint absent from cspace at its default_joint_positions value,
+# so gripper_joint1 is held at the fully-open 0.0715 m and the guarded volume is
+# the jaws' widest envelope. Only gripper_joint1 is listed: gripper_joint2 is its
+# MIMIC FOLLOWER and cuMotion rejects the URDF import if a follower is set
+# explicitly. The follower still reaches 0.0715 m via the mimic, so both jaws are
+# locked open.
+#
+# SPHERES COVER MATERIAL, NOT THE GRASPING HOLLOW. The collision hulls are one
+# convex hull per link and a jaw's hull BRIDGES the gap between its carriage rail
+# and its finger body -- 63.9% of the gripper_left hull is void, and at the worst
+# cross-section 95.4% is void. Spheres fitted to that hull sit exactly where a
+# grasped object must go, so every grasp is reported as a collision before the jaws
+# touch anything: rebuilding these jaws from their hulls measurably intrudes
+# 18.2 mm into the can's grasp volume, against -6.5 mm of clearance here.
+#
+# THE COVERAGE TARGET IS meshes/visual/*.STL FOR EVERY LINK, not just the jaws. An
+# earlier revision made the jaws the exception, which was the wrong shape of fix:
+# FOUR ARM LINKS ARE EMPTIER THAN THE JAWS (link1 79.7% void, link4 70.5%,
+# gripper_link 68.7%, link3 67.4%, against the jaws' 63.9%), so covering their
+# hulls forced radii large enough to invent base_link<->gripper self-collisions
+# the real parts do not have. The jaws keep one extra measure -- rail and finger
+# are covered as SEPARATE solids -- so no jaw sphere's radius is ever set across
+# the empty gap between them.
+format: xrdf
+format_version: 1.0
+modifiers:
+- {set_base_frame: base_link}
+- add_frame:
+    frame_name: camera_mount
+    parent_frame_name: link6
+    joint_name: camera_mount_joint
+    joint_type: FIXED
+    fixed_transform:
+      position: [0.05, 0.0, 0.06]
+      orientation:
+        w: 1.0
+        xyz: [0.0, 0.0, 0.0]
+default_joint_positions: {joint1: -0.6, joint2: -0.75, joint3: -0.75, joint4: 0.0, joint5: 0.0, joint6: 0.0,
+  gripper_joint1: 0.0715}
+cspace:
+  joint_names: [joint1, joint2, joint3, joint4, joint5, joint6]
+  acceleration_limits: [25.0, 25.0, 25.0, 15.0, 15.0, 15.0]
+  jerk_limits: [500.0, 500.0, 500.0, 300.0, 300.0, 300.0]
+tool_frames: [gripper_tcp]
+collision:
+  geometry: collision_spheres
+  buffer_distance: {base_link: 0.005, link1: 0.005, link2: 0.005, link3: 0.005, link4: 0.005, link5: 0.005,
+    link6: 0.005, camera_mount: 0.005, gripper_link: 0.005, gripper_left: 0.0, gripper_right: 0.0}
+self_collision:
+  geometry: collision_spheres
+  buffer_distance: {base_link: 0.002, link1: 0.002, link2: 0.002, link3: 0.002, link4: 0.002, link5: 0.002,
+    link6: 0.002, camera_mount: 0.002, gripper_link: 0.002, gripper_left: 0.001, gripper_right: 0.001}
+  ignore:
+    base_link: [link1, link2]
+    camera_mount: [gripper_left, gripper_link, link4, link5, link6]
+    gripper_left: [gripper_link]
+    gripper_link: [gripper_right, link4, link5, link6]
+    link1: [link2, link3, link4, link5]
+    link2: [link3, link4, link5]
+    link3: [link4, link5]
+    link4: [link5, link6]
+    link5: [link6]
+geometry:
+  collision_spheres:
+    spheres:
+      base_link:
+      - center: [-0.003, 0.0, 0.0465]
+        radius: 0.0375
+      - center: [-0.0285, -0.027, 0.015]
+        radius: 0.02525
+      - center: [-0.0285, 0.027, 0.015]
+        radius: 0.02525
+      - center: [0.0195, -0.033, 0.012]
+        radius: 0.02525
+      - center: [0.0195, 0.033, 0.012]
+        radius: 0.02525
+      - center: [-0.0285, -0.0285, 0.039]
+        radius: 0.02437
+      - center: [-0.0285, -0.0285, 0.063]
+        radius: 0.02437
+      - center: [-0.0285, 0.0285, 0.039]
+        radius: 0.02437
+      - center: [-0.0285, 0.0285, 0.063]
+        radius: 0.02437
+      - center: [0.0285, -0.0285, 0.0345]
+        radius: 0.02437
+      - center: [0.0285, -0.0285, 0.0585]
+        radius: 0.02437
+      - center: [0.0285, 0.0285, 0.0345]
+        radius: 0.02437
+      - center: [0.0285, 0.0285, 0.0585]
+        radius: 0.02437
+      - center: [-0.018, -0.0015, 0.0105]
+        radius: 0.024
+      - center: [-0.0015, -0.018, 0.0105]
+        radius: 0.024
+      - center: [-0.0015, 0.018, 0.0105]
+        radius: 0.024
+      - center: [0.018, -0.0015, 0.0105]
+        radius: 0.024
+      - center: [0.039, -0.018, 0.009]
+        radius: 0.0216
+      - center: [0.039, 0.018, 0.009]
+        radius: 0.0216
+      - center: [-0.039, -0.0105, 0.0735]
+        radius: 0.021
+      - center: [-0.039, -0.0015, 0.0555]
+        radius: 0.021
+      - center: [-0.039, 0.0105, 0.0735]
+        radius: 0.021
+      - center: [-0.0105, -0.039, 0.0525]
+        radius: 0.021
+      - center: [-0.0105, -0.039, 0.0735]
+        radius: 0.021
+      - center: [-0.0105, 0.039, 0.0525]
+        radius: 0.021
+      - center: [-0.0105, 0.039, 0.0735]
+        radius: 0.021
+      - center: [0.0075, -0.039, 0.0615]
+        radius: 0.021
+      - center: [0.0075, 0.039, 0.0615]
+        radius: 0.021
+      - center: [0.039, -0.0135, 0.0735]
+        radius: 0.021
+      - center: [0.039, -0.0045, 0.0555]
+        radius: 0.021
+      - center: [0.039, 0.0075, 0.072]
+        radius: 0.021
+      - center: [-0.012, -0.0435, 0.0075]
+        radius: 0.02075
+      - center: [-0.012, 0.0435, 0.0075]
+        radius: 0.02075
+      - center: [-0.0465, -0.012, 0.0075]
+        radius: 0.01965
+      - center: [-0.0465, 0.012, 0.0075]
+        radius: 0.01965
+      - center: [-0.0645, -0.0885, 0.006]
+        radius: 0.0195
+      - center: [-0.0645, -0.069, 0.006]
+        radius: 0.0195
+      - center: [-0.0645, -0.0495, 0.006]
+        radius: 0.0195
+      - center: [-0.0645, -0.03, 0.006]
+        radius: 0.0195
+      - center: [-0.0645, -0.0075, 0.006]
+        radius: 0.0195
+      - center: [-0.0645, 0.0165, 0.006]
+        radius: 0.0195
+      - center: [-0.0645, 0.036, 0.006]
+        radius: 0.0195
+      - center: [-0.0645, 0.0555, 0.006]
+        radius: 0.0195
+      - center: [-0.0645, 0.075, 0.006]
+        radius: 0.0195
+      - center: [-0.0615, 0.093, 0.006]
+        radius: 0.0195
+      - center: [-0.048, -0.0795, 0.006]
+        radius: 0.0195
+      - center: [-0.048, -0.06, 0.006]
+        radius: 0.0195
+      - center: [-0.048, -0.0405, 0.006]
+        radius: 0.0195
+      - center: [-0.048, 0.045, 0.006]
+        radius: 0.0195
+      - center: [-0.048, 0.0645, 0.006]
+        radius: 0.0195
+      - center: [-0.045, 0.0825, 0.006]
+        radius: 0.0195
+      - center: [-0.0375, -0.0945, 0.006]
+        radius: 0.0195
+      - center: [-0.0315, -0.0705, 0.006]
+        radius: 0.0195
+      - center: [-0.0315, -0.051, 0.006]
+        radius: 0.0195
+      - center: [-0.0315, 0.054, 0.006]
+        radius: 0.0195
+      - center: [-0.03, 0.093, 0.006]
+        radius: 0.0195
+      - center: [-0.0285, 0.072, 0.006]
+        radius: 0.0195
+      - center: [-0.021, -0.0855, 0.006]
+        radius: 0.0195
+      - center: [-0.0135, -0.0675, 0.006]
+        radius: 0.0195
+      - center: [-0.0135, 0.0825, 0.006]
+        radius: 0.0195
+      - center: [-0.012, 0.063, 0.006]
+        radius: 0.0195
+      - center: [-0.0045, -0.0945, 0.006]
+        radius: 0.0195
+      - center: [0.0015, 0.093, 0.006]
+        radius: 0.0195
+      - center: [0.003, -0.0765, 0.006]
+        radius: 0.0195
+      - center: [0.003, -0.057, 0.006]
+        radius: 0.0195
+      - center: [0.003, 0.0735, 0.006]
+        radius: 0.0195
+      - center: [0.0045, 0.054, 0.006]
+        radius: 0.0195
+      - center: [0.0135, -0.0915, 0.006]
+        radius: 0.0195
+      - center: [0.018, 0.084, 0.006]
+        radius: 0.0195
+      - center: [0.0195, -0.0675, 0.006]
+        radius: 0.0195
+      - center: [0.0195, 0.0645, 0.006]
+        radius: 0.0195
+      - center: [0.03, -0.0825, 0.006]
+        radius: 0.0195
+      - center: [0.033, -0.054, 0.006]
+        radius: 0.0195
+      - center: [0.033, 0.0945, 0.006]
+        radius: 0.0195
+      - center: [0.0345, 0.051, 0.006]
+        radius: 0.0195
+      - center: [0.0345, 0.075, 0.006]
+        radius: 0.0195
+      - center: [0.0435, -0.069, 0.006]
+        radius: 0.0195
+      - center: [0.0435, -0.039, 0.006]
+        radius: 0.0195
+      - center: [0.045, -0.0945, 0.006]
+        radius: 0.0195
+      - center: [0.048, 0.0, 0.006]
+        radius: 0.0195
+      - center: [0.048, 0.036, 0.006]
+        radius: 0.0195
+      - center: [0.0495, 0.0615, 0.006]
+        radius: 0.0195
+      - center: [0.0495, 0.0855, 0.006]
+        radius: 0.0195
+      - center: [0.054, -0.054, 0.006]
+        radius: 0.0195
+      - center: [0.0585, -0.081, 0.006]
+        radius: 0.0195
+      - center: [0.0585, -0.0285, 0.006]
+        radius: 0.0195
+      - center: [0.06, 0.015, 0.006]
+        radius: 0.0195
+      - center: [0.063, -0.0105, 0.006]
+        radius: 0.0195
+      - center: [0.063, 0.0465, 0.006]
+        radius: 0.0195
+      - center: [0.0645, 0.072, 0.006]
+        radius: 0.0195
+      - center: [0.009, -0.021, 0.0735]
+        radius: 0.01836
+      - center: [0.009, 0.021, 0.0735]
+        radius: 0.01836
+      - center: [-0.0135, -0.042, 0.027]
+        radius: 0.018
+      - center: [-0.0135, 0.042, 0.027]
+        radius: 0.018
+      - center: [0.018, -0.036, 0.078]
+        radius: 0.018
+      - center: [0.018, 0.036, 0.078]
+        radius: 0.018
+      - center: [0.021, -0.0045, 0.0735]
+        radius: 0.01741
+      - center: [0.0075, -0.0345, 0.042]
+        radius: 0.0165
+      - center: [0.0075, 0.0345, 0.042]
+        radius: 0.0165
+      - center: [0.039, 0.027, 0.0795]
+        radius: 0.0165
+      - center: [0.0435, 0.015, 0.0465]
+        radius: 0.0165
+      - center: [0.066, 0.093, 0.003]
+        radius: 0.01624
+      - center: [-0.0195, -0.012, 0.0765]
+        radius: 0.01567
+      - center: [-0.0195, 0.012, 0.0765]
+        radius: 0.01567
+      - center: [0.036, -0.0345, 0.0795]
+        radius: 0.01535
+      - center: [-0.045, -0.015, 0.0285]
+        radius: 0.015
+      - center: [-0.045, 0.0135, 0.027]
+        radius: 0.015
+      - center: [0.009, -0.045, 0.03]
+        radius: 0.015
+      - center: [0.009, 0.045, 0.03]
+        radius: 0.015
+      - center: [0.033, -0.006, 0.0315]
+        radius: 0.015
+      - center: [0.033, 0.006, 0.039]
+        radius: 0.015
+      - center: [0.045, -0.0135, 0.0285]
+        radius: 0.015
+      - center: [0.045, 0.0135, 0.0285]
+        radius: 0.015
+      - center: [0.0675, -0.066, 0.012]
+        radius: 0.015
+      - center: [0.069, -0.045, 0.012]
+        radius: 0.015
+      - center: [0.069, 0.03, 0.012]
+        radius: 0.015
+      - center: [0.0645, -0.0975, 0.012]
+        radius: 0.01412
+      - center: [-0.0465, 0.012, 0.042]
+        radius: 0.0135
+      - center: [-0.0465, 0.1005, 0.0135]
+        radius: 0.0135
+      - center: [-0.042, -0.03, 0.0825]
+        radius: 0.0135
+      - center: [-0.042, 0.0285, 0.0825]
+        radius: 0.0135
+      - center: [-0.033, -0.0405, 0.0825]
+        radius: 0.0135
+      - center: [-0.033, 0.0405, 0.0825]
+        radius: 0.0135
+      - center: [-0.015, 0.1005, 0.0135]
+        radius: 0.0135
+      - center: [0.0165, -0.0465, 0.045]
+        radius: 0.0135
+      - center: [0.0165, 0.0465, 0.045]
+        radius: 0.0135
+      - center: [0.0225, 0.015, 0.0825]
+        radius: 0.0135
+      - center: [0.0285, -0.1005, 0.0]
+        radius: 0.0135
+      - center: [0.0285, -0.1005, 0.0135]
+        radius: 0.0135
+      - center: [0.057, 0.1005, 0.0135]
+        radius: 0.0135
+      - center: [0.0705, -0.06, 0.0]
+        radius: 0.0135
+      link1:
+      - center: [-0.021, -0.03, 0.009]
+        radius: 0.0225
+      - center: [-0.021, -0.0075, 0.0075]
+        radius: 0.0225
+      - center: [-0.021, 0.015, 0.0075]
+        radius: 0.0225
+      - center: [-0.0225, 0.0345, 0.0165]
+        radius: 0.018
+      - center: [-0.003, -0.012, -0.003]
+        radius: 0.018
+      - center: [0.006, 0.0105, -0.003]
+        radius: 0.018
+      - center: [0.009, -0.0345, 0.0495]
+        radius: 0.018
+      - center: [0.0195, -0.0345, 0.0675]
+        radius: 0.018
+      - center: [0.03, -0.0345, 0.048]
+        radius: 0.018
+      - center: [0.006, 0.036, 0.051]
+        radius: 0.0165
+      - center: [0.018, 0.0345, 0.066]
+        radius: 0.0165
+      - center: [0.027, 0.0345, 0.048]
+        radius: 0.0165
+      - center: [-0.0135, 0.0345, 0.0015]
+        radius: 0.01624
+      - center: [0.0135, -0.009, 0.0]
+        radius: 0.01624
+      - center: [-0.0015, -0.036, 0.0015]
+        radius: 0.01535
+      - center: [0.0015, 0.036, 0.0015]
+        radius: 0.01535
+      - center: [0.0135, -0.036, 0.0015]
+        radius: 0.01535
+      - center: [0.0345, 0.036, 0.0615]
+        radius: 0.01535
+      - center: [-0.033, 0.0315, 0.0015]
+        radius: 0.015
+      - center: [-0.021, -0.0375, 0.03]
+        radius: 0.015
+      - center: [-0.0195, 0.0375, 0.033]
+        radius: 0.015
+      - center: [-0.015, -0.0375, 0.0435]
+        radius: 0.015
+      - center: [-0.0135, 0.0375, 0.0465]
+        radius: 0.015
+      - center: [-0.009, -0.0375, 0.057]
+        radius: 0.015
+      - center: [-0.0075, -0.0375, 0.024]
+        radius: 0.015
+      - center: [-0.0075, 0.0375, 0.024]
+        radius: 0.015
+      - center: [-0.0075, 0.0375, 0.06]
+        radius: 0.015
+      - center: [-0.003, 0.0375, 0.0375]
+        radius: 0.015
+      - center: [-0.0015, -0.0375, 0.069]
+        radius: 0.015
+      - center: [0.0, 0.0375, 0.072]
+        radius: 0.015
+      - center: [0.0015, -0.0375, 0.0345]
+        radius: 0.015
+      - center: [0.003, -0.0375, 0.015]
+        radius: 0.015
+      - center: [0.0045, 0.0375, 0.0165]
+        radius: 0.015
+      - center: [0.0075, -0.0375, 0.0795]
+        radius: 0.015
+      - center: [0.009, 0.0375, 0.03]
+        radius: 0.015
+      - center: [0.0105, 0.0375, 0.081]
+        radius: 0.015
+      - center: [0.012, -0.0375, 0.0255]
+        radius: 0.015
+      - center: [0.012, 0.0255, 0.0015]
+        radius: 0.015
+      - center: [0.015, 0.0375, 0.0075]
+        radius: 0.015
+      - center: [0.0195, 0.0375, 0.021]
+        radius: 0.015
+      - center: [0.021, -0.0375, 0.0135]
+        radius: 0.015
+      - center: [0.021, -0.024, 0.0]
+        radius: 0.015
+      - center: [0.021, 0.0045, 0.0015]
+        radius: 0.015
+      - center: [0.024, 0.018, 0.0]
+        radius: 0.015
+      - center: [0.0255, -0.0375, 0.0285]
+        radius: 0.015
+      - center: [0.0255, 0.0375, 0.0795]
+        radius: 0.015
+      - center: [0.027, 0.0315, 0.0015]
+        radius: 0.015
+      - center: [0.027, 0.0375, 0.033]
+        radius: 0.015
+      - center: [0.0285, -0.036, 0.0015]
+        radius: 0.015
+      - center: [0.0285, -0.012, 0.0]
+        radius: 0.015
+      - center: [0.0315, -0.0375, 0.0795]
+        radius: 0.015
+      - center: [0.0315, 0.0375, 0.0135]
+        radius: 0.015
+      - center: [0.0345, -0.0375, 0.0165]
+        radius: 0.015
+      - center: [0.0345, 0.0015, 0.0]
+        radius: 0.015
+      - center: [0.036, -0.0375, 0.0645]
+        radius: 0.015
+      - center: [0.039, -0.0375, 0.0315]
+        radius: 0.015
+      - center: [0.039, 0.0375, 0.0255]
+        radius: 0.015
+      - center: [0.039, 0.0375, 0.075]
+        radius: 0.015
+      - center: [0.0405, 0.0375, 0.0405]
+        radius: 0.015
+      - center: [0.0465, -0.0375, 0.048]
+        radius: 0.015
+      - center: [0.0465, 0.0375, 0.054]
+        radius: 0.015
+      - center: [-0.039, 0.0, -0.0015]
+        radius: 0.0135
+      - center: [-0.009, 0.003, -0.0075]
+        radius: 0.0135
+      - center: [0.036, -0.024, 0.0]
+        radius: 0.0135
+      link2:
+      - center: [-0.2655, -0.0015, -0.0315]
+        radius: 0.039
+      - center: [-0.0015, -0.0015, -0.0315]
+        radius: 0.039
+      - center: [-0.1935, -0.0105, -0.0525]
+        radius: 0.027
+      - center: [-0.1665, -0.012, -0.0525]
+        radius: 0.02677
+      - center: [-0.129, -0.012, -0.0525]
+        radius: 0.02615
+      - center: [-0.099, -0.0075, -0.0525]
+        radius: 0.02615
+      - center: [-0.213, 0.0, -0.012]
+        radius: 0.02558
+      - center: [-0.051, 0.0, -0.051]
+        radius: 0.02558
+      - center: [-0.051, 0.0, -0.012]
+        radius: 0.02558
+      - center: [-0.192, -0.0135, -0.012]
+        radius: 0.0255
+      - center: [-0.1695, -0.0045, -0.012]
+        radius: 0.0255
+      - center: [-0.147, -0.0135, -0.012]
+        radius: 0.0255
+      - center: [-0.1245, -0.0045, -0.012]
+        radius: 0.0255
+      - center: [-0.102, -0.0135, -0.012]
+        radius: 0.0255
+      - center: [-0.0795, -0.0045, -0.012]
+        radius: 0.0255
+      - center: [-0.0735, -0.0135, -0.0525]
+        radius: 0.0255
+      - center: [-0.216, 0.003, -0.054]
+        radius: 0.024
+      - center: [-0.1485, 0.0045, -0.045]
+        radius: 0.021
+      - center: [-0.2175, -0.018, -0.045]
+        radius: 0.01965
+      - center: [-0.216, 0.012, -0.033]
+        radius: 0.0195
+      - center: [-0.174, 0.006, -0.036]
+        radius: 0.0195
+      - center: [-0.132, 0.006, -0.033]
+        radius: 0.0195
+      - center: [-0.114, 0.006, -0.0375]
+        radius: 0.0195
+      - center: [-0.0435, 0.0225, -0.0585]
+        radius: 0.01871
+      - center: [-0.0435, 0.0225, -0.006]
+        radius: 0.01871
+      - center: [-0.2205, 0.0225, -0.006]
+        radius: 0.01836
+      - center: [-0.048, 0.015, -0.0315]
+        radius: 0.01836
+      - center: [-0.2715, 0.0225, -0.06]
+        radius: 0.018
+      - center: [-0.2715, 0.0225, -0.003]
+        radius: 0.018
+      - center: [-0.2535, 0.021, -0.06]
+        radius: 0.018
+      - center: [-0.2535, 0.021, -0.003]
+        radius: 0.018
+      - center: [-0.2415, -0.0075, -0.06]
+        radius: 0.018
+      - center: [-0.2415, -0.0075, -0.003]
+        radius: 0.018
+      - center: [-0.222, -0.021, -0.003]
+        radius: 0.018
+      - center: [-0.198, 0.0045, -0.0315]
+        radius: 0.018
+      - center: [-0.153, 0.0075, -0.0255]
+        radius: 0.018
+      - center: [-0.0975, 0.0045, -0.0285]
+        radius: 0.018
+      - center: [-0.0825, 0.0045, -0.0375]
+        radius: 0.018
+      - center: [-0.066, 0.0045, -0.0315]
+        radius: 0.018
+      - center: [-0.063, -0.021, -0.021]
+        radius: 0.018
+      - center: [-0.0615, -0.021, -0.003]
+        radius: 0.018
+      - center: [-0.042, -0.021, -0.06]
+        radius: 0.018
+      - center: [-0.042, -0.021, -0.003]
+        radius: 0.018
+      - center: [-0.0075, 0.0225, -0.06]
+        radius: 0.018
+      - center: [-0.0075, 0.0225, -0.003]
+        radius: 0.018
+      - center: [0.0105, 0.021, -0.06]
+        radius: 0.018
+      - center: [0.0105, 0.021, -0.003]
+        radius: 0.018
+      - center: [0.0225, -0.0075, -0.06]
+        radius: 0.018
+      - center: [0.0225, -0.0075, -0.003]
+        radius: 0.018
+      - center: [-0.2205, 0.024, -0.0465]
+        radius: 0.01741
+      - center: [-0.2175, -0.021, -0.024]
+        radius: 0.01674
+      - center: [-0.054, -0.021, -0.039]
+        radius: 0.01674
+      - center: [-0.0465, -0.021, -0.024]
+        radius: 0.01674
+      - center: [-0.2895, -0.003, -0.0615]
+        radius: 0.0165
+      - center: [-0.2895, -0.003, -0.0015]
+        radius: 0.0165
+      - center: [-0.285, 0.012, -0.0615]
+        radius: 0.0165
+      - center: [-0.285, 0.012, -0.0015]
+        radius: 0.0165
+      - center: [-0.2775, -0.021, -0.0615]
+        radius: 0.0165
+      - center: [-0.2775, -0.021, -0.0015]
+        radius: 0.0165
+      - center: [-0.2625, -0.0255, -0.0615]
+        radius: 0.0165
+      - center: [-0.2625, -0.0255, -0.0015]
+        radius: 0.0165
+      - center: [-0.204, -0.0225, -0.0315]
+        radius: 0.0165
+      - center: [-0.1815, -0.0225, -0.033]
+        radius: 0.0165
+      - center: [-0.1665, -0.0225, -0.0285]
+        radius: 0.0165
+      - center: [-0.1515, -0.0225, -0.0345]
+        radius: 0.0165
+      - center: [-0.1335, -0.0225, -0.03]
+        radius: 0.0165
+      - center: [-0.117, -0.0225, -0.033]
+        radius: 0.0165
+      - center: [-0.093, -0.0225, -0.033]
+        radius: 0.0165
+      - center: [-0.078, -0.0225, -0.03]
+        radius: 0.0165
+      - center: [-0.0255, -0.0045, -0.0615]
+        radius: 0.0165
+      - center: [-0.0255, -0.0045, -0.0015]
+        radius: 0.0165
+      - center: [-0.0225, 0.0105, -0.0615]
+        radius: 0.0165
+      - center: [-0.0225, 0.0105, -0.0015]
+        radius: 0.0165
+      - center: [-0.018, -0.018, -0.0615]
+        radius: 0.0165
+      - center: [-0.018, -0.018, -0.0015]
+        radius: 0.0165
+      - center: [-0.003, -0.0255, -0.0615]
+        radius: 0.0165
+      - center: [-0.003, -0.0255, -0.0015]
+        radius: 0.0165
+      - center: [0.012, -0.021, -0.0615]
+        radius: 0.0165
+      - center: [0.012, -0.021, -0.0015]
+        radius: 0.0165
+      - center: [-0.117, 0.009, -0.0585]
+        radius: 0.01624
+      - center: [-0.24, 0.0105, -0.0615]
+        radius: 0.01567
+      - center: [-0.24, 0.0105, -0.0015]
+        radius: 0.01567
+      - center: [-0.225, -0.0225, -0.0615]
+        radius: 0.01535
+      - center: [-0.192, 0.009, -0.003]
+        radius: 0.01535
+      - center: [-0.1515, 0.009, -0.003]
+        radius: 0.01535
+      - center: [-0.1065, 0.009, -0.003]
+        radius: 0.01535
+      - center: [0.024, 0.0105, -0.0615]
+        radius: 0.01535
+      - center: [0.024, 0.0105, -0.006]
+        radius: 0.01535
+      - center: [-0.246, -0.024, -0.063]
+        radius: 0.015
+      - center: [-0.246, -0.024, 0.0]
+        radius: 0.015
+      - center: [-0.237, 0.0255, -0.063]
+        radius: 0.015
+      - center: [-0.237, 0.0255, 0.0]
+        radius: 0.015
+      - center: [-0.2235, 0.0225, -0.063]
+        radius: 0.015
+      - center: [-0.2205, 0.027, -0.0225]
+        radius: 0.015
+      - center: [-0.1785, 0.0105, -0.0585]
+        radius: 0.015
+      - center: [-0.1455, 0.003, -0.0645]
+        radius: 0.015
+      - center: [-0.027, 0.0255, 0.0]
+        radius: 0.015
+      - center: [-0.027, 0.027, -0.063]
+        radius: 0.015
+      - center: [-0.2115, -0.0255, -0.0645]
+        radius: 0.0135
+      - center: [-0.162, 0.012, -0.06]
+        radius: 0.0135
+      - center: [-0.135, 0.012, -0.06]
+        radius: 0.0135
+      - center: [-0.081, 0.009, -0.06]
+        radius: 0.0135
+      - center: [-0.0465, 0.0285, -0.042]
+        radius: 0.0135
+      - center: [-0.042, 0.0285, -0.0225]
+        radius: 0.0135
+      link3:
+      - center: [0.231, -0.0555, -0.027]
+        radius: 0.03
+      - center: [0.0255, -0.054, -0.012]
+        radius: 0.027
+      - center: [0.0285, -0.048, -0.0495]
+        radius: 0.02583
+      - center: [0.057, -0.0615, -0.0135]
+        radius: 0.02542
+      - center: [0.2595, -0.054, -0.0315]
+        radius: 0.02542
+      - center: [0.0555, -0.0615, -0.0495]
+        radius: 0.0249
+      - center: [0.078, -0.054, -0.048]
+        radius: 0.024
+      - center: [0.0795, -0.0525, -0.015]
+        radius: 0.024
+      - center: [0.099, -0.0645, -0.0495]
+        radius: 0.024
+      - center: [0.099, -0.0645, -0.015]
+        radius: 0.024
+      - center: [0.1185, -0.0525, -0.048]
+        radius: 0.024
+      - center: [0.1185, -0.0525, -0.015]
+        radius: 0.024
+      - center: [0.1395, -0.063, -0.048]
+        radius: 0.024
+      - center: [0.1395, -0.063, -0.015]
+        radius: 0.024
+      - center: [0.1605, -0.054, -0.0495]
+        radius: 0.024
+      - center: [0.1605, -0.054, -0.015]
+        radius: 0.024
+      - center: [0.1815, -0.063, -0.048]
+        radius: 0.024
+      - center: [0.1815, -0.063, -0.015]
+        radius: 0.024
+      - center: [0.249, -0.036, -0.015]
+        radius: 0.02261
+      - center: [-0.0105, -0.0645, -0.057]
+        radius: 0.02206
+      - center: [-0.0105, -0.0645, -0.0135]
+        radius: 0.02206
+      - center: [0.252, -0.072, -0.015]
+        radius: 0.02149
+      - center: [-0.012, -0.066, -0.036]
+        radius: 0.021
+      - center: [0.1995, -0.0495, -0.0525]
+        radius: 0.021
+      - center: [0.1995, -0.0495, -0.0105]
+        radius: 0.021
+      - center: [0.03, -0.0675, -0.0645]
+        radius: 0.0195
+      - center: [0.243, -0.0315, -0.0375]
+        radius: 0.0195
+      - center: [0.045, -0.0465, 0.003]
+        radius: 0.01887
+      - center: [0.2475, -0.0765, -0.039]
+        radius: 0.01871
+      - center: [-0.0105, -0.0075, -0.066]
+        radius: 0.018
+      - center: [-0.0105, 0.006, 0.0045]
+        radius: 0.018
+      - center: [-0.0075, 0.0105, -0.066]
+        radius: 0.018
+      - center: [-0.0015, -0.012, 0.0045]
+        radius: 0.018
+      - center: [0.006, -0.0105, -0.066]
+        radius: 0.018
+      - center: [0.009, 0.0075, -0.066]
+        radius: 0.018
+      - center: [0.009, 0.0075, 0.0045]
+        radius: 0.018
+      - center: [0.039, -0.069, 0.0045]
+        radius: 0.018
+      - center: [0.084, -0.0705, -0.033]
+        radius: 0.018
+      - center: [0.114, -0.0705, -0.033]
+        radius: 0.018
+      - center: [0.2025, -0.069, -0.0555]
+        radius: 0.018
+      - center: [0.2025, -0.069, -0.0075]
+        radius: 0.018
+      - center: [0.219, -0.0585, -0.0555]
+        radius: 0.018
+      - center: [0.222, -0.042, -0.0555]
+        radius: 0.018
+      - center: [0.2295, -0.0735, -0.0555]
+        radius: 0.018
+      - center: [0.2355, -0.0315, -0.0555]
+        radius: 0.018
+      - center: [0.2505, -0.0645, -0.0525]
+        radius: 0.018
+      - center: [0.2535, -0.033, -0.0555]
+        radius: 0.018
+      - center: [0.2655, -0.0585, -0.0075]
+        radius: 0.018
+      - center: [0.2655, -0.057, -0.0555]
+        radius: 0.018
+      - center: [0.0465, -0.045, -0.066]
+        radius: 0.01761
+      - center: [0.0135, -0.0585, -0.066]
+        radius: 0.01741
+      - center: [0.0435, -0.045, -0.03]
+        radius: 0.01741
+      - center: [0.228, -0.0345, -0.0075]
+        radius: 0.01741
+      - center: [0.033, -0.069, -0.0375]
+        radius: 0.01674
+      - center: [0.0045, -0.048, 0.0045]
+        radius: 0.0165
+      - center: [0.0075, -0.0435, -0.0675]
+        radius: 0.0165
+      - center: [0.0165, -0.0375, 0.006]
+        radius: 0.0165
+      - center: [0.06, -0.045, -0.033]
+        radius: 0.0165
+      - center: [0.093, -0.045, -0.033]
+        radius: 0.0165
+      - center: [0.1335, -0.0465, -0.0315]
+        radius: 0.0165
+      - center: [0.1545, -0.0705, -0.0315]
+        radius: 0.0165
+      - center: [0.174, -0.045, -0.033]
+        radius: 0.0165
+      - center: [0.189, -0.0465, -0.03]
+        radius: 0.0165
+      - center: [0.1965, -0.0705, -0.0315]
+        radius: 0.0165
+      - center: [0.231, -0.0765, -0.006]
+        radius: 0.0165
+      - center: [-0.024, -0.0705, 0.0015]
+        radius: 0.01535
+      - center: [0.015, -0.009, 0.006]
+        radius: 0.01535
+      - center: [0.021, -0.072, 0.006]
+        radius: 0.01535
+      - center: [0.0315, -0.0345, 0.006]
+        radius: 0.01535
+      - center: [-0.018, -0.009, 0.006]
+        radius: 0.015
+      - center: [-0.009, -0.027, -0.0675]
+        radius: 0.015
+      - center: [-0.009, -0.027, 0.006]
+        radius: 0.015
+      - center: [-0.003, 0.021, 0.006]
+        radius: 0.015
+      - center: [0.0, -0.072, 0.003]
+        radius: 0.015
+      - center: [0.006, -0.027, -0.069]
+        radius: 0.015
+      - center: [0.0195, -0.033, -0.069]
+        radius: 0.015
+      - center: [0.0195, -0.0225, 0.006]
+        radius: 0.015
+      - center: [0.021, -0.018, -0.069]
+        radius: 0.015
+      - center: [0.0225, -0.003, -0.069]
+        radius: 0.015
+      - center: [0.03, -0.0135, 0.006]
+        radius: 0.015
+      - center: [0.033, -0.03, -0.069]
+        radius: 0.015
+      - center: [0.078, -0.0735, -0.006]
+        radius: 0.015
+      - center: [0.1185, -0.0735, -0.057]
+        radius: 0.015
+      - center: [0.1185, -0.0735, -0.006]
+        radius: 0.015
+      - center: [0.1485, -0.0435, -0.033]
+        radius: 0.015
+      - center: [0.2445, -0.081, -0.0585]
+        radius: 0.015
+      - center: [0.0165, -0.066, -0.0375]
+        radius: 0.01412
+      - center: [0.099, -0.0435, -0.006]
+        radius: 0.01412
+      - center: [0.2115, -0.0345, -0.0045]
+        radius: 0.01412
+      - center: [0.267, -0.042, -0.0045]
+        radius: 0.01412
+      - center: [-0.027, -0.0735, -0.066]
+        radius: 0.0135
+      - center: [-0.027, -0.072, -0.024]
+        radius: 0.0135
+      - center: [-0.0135, -0.054, 0.0045]
+        radius: 0.0135
+      - center: [0.0045, -0.0285, 0.009]
+        radius: 0.0135
+      - center: [0.006, -0.0735, -0.066]
+        radius: 0.0135
+      - center: [0.0105, -0.0615, 0.009]
+        radius: 0.0135
+      - center: [0.024, 0.0015, 0.009]
+        radius: 0.0135
+      - center: [0.0285, -0.0345, -0.0285]
+        radius: 0.0135
+      - center: [0.033, -0.012, -0.066]
+        radius: 0.0135
+      - center: [0.0675, -0.0735, -0.033]
+        radius: 0.0135
+      - center: [0.0735, -0.075, -0.0585]
+        radius: 0.0135
+      - center: [0.096, -0.0435, -0.0585]
+        radius: 0.0135
+      - center: [0.138, -0.042, -0.057]
+        radius: 0.0135
+      - center: [0.138, -0.042, -0.006]
+        radius: 0.0135
+      - center: [0.1695, -0.0735, -0.0315]
+        radius: 0.0135
+      - center: [0.1785, -0.042, -0.057]
+        radius: 0.0135
+      - center: [0.1785, -0.042, -0.006]
+        radius: 0.0135
+      - center: [0.2175, -0.0465, -0.003]
+        radius: 0.0135
+      - center: [0.219, -0.0675, -0.003]
+        radius: 0.0135
+      - center: [0.219, -0.0255, -0.06]
+        radius: 0.0135
+      - center: [0.2235, -0.0315, -0.042]
+        radius: 0.0135
+      - center: [0.231, -0.027, -0.0225]
+        radius: 0.0135
+      - center: [0.2445, -0.0465, -0.051]
+        radius: 0.0135
+      - center: [0.258, -0.078, -0.06]
+        radius: 0.0135
+      - center: [0.261, -0.0315, -0.0405]
+        radius: 0.0135
+      - center: [0.264, -0.0735, -0.048]
+        radius: 0.0135
+      - center: [0.2685, -0.0405, -0.06]
+        radius: 0.0135
+      link4:
+      - center: [0.0735, -0.06, -0.039]
+        radius: 0.03012
+      - center: [0.063, -0.0495, -0.0135]
+        radius: 0.02419
+      - center: [0.0885, -0.0675, -0.015]
+        radius: 0.02372
+      - center: [0.0975, -0.0495, -0.0255]
+        radius: 0.02206
+      - center: [0.03, -0.0465, -0.0555]
+        radius: 0.021
+      - center: [0.03, -0.0465, -0.018]
+        radius: 0.021
+      - center: [0.048, -0.0465, -0.0465]
+        radius: 0.021
+      - center: [0.0585, -0.072, -0.015]
+        radius: 0.01979
+      - center: [0.0855, -0.045, -0.009]
+        radius: 0.01965
+      - center: [0.0435, -0.0435, -0.003]
+        radius: 0.0195
+      - center: [0.1005, -0.072, -0.0345]
+        radius: 0.0195
+      - center: [0.096, -0.0435, -0.0465]
+        radius: 0.01818
+      - center: [0.0585, -0.084, -0.0495]
+        radius: 0.01741
+      - center: [0.0945, -0.075, -0.0525]
+        radius: 0.01741
+      - center: [-0.0135, -0.0045, -0.0015]
+        radius: 0.0165
+      - center: [-0.0135, -0.0015, -0.0585]
+        radius: 0.0165
+      - center: [-0.0105, 0.0105, 0.0]
+        radius: 0.0165
+      - center: [-0.006, 0.012, -0.0585]
+        radius: 0.0165
+      - center: [-0.003, -0.0135, -0.06]
+        radius: 0.0165
+      - center: [0.009, -0.006, -0.0015]
+        radius: 0.0165
+      - center: [0.009, 0.009, -0.06]
+        radius: 0.0165
+      - center: [0.0105, 0.0105, 0.0]
+        radius: 0.0165
+      - center: [0.012, -0.009, -0.06]
+        radius: 0.0165
+      - center: [0.024, -0.0405, 0.0]
+        radius: 0.0165
+      - center: [0.0615, -0.0405, -0.06]
+        radius: 0.0165
+      - center: [0.087, -0.0855, -0.042]
+        radius: 0.0165
+      - center: [0.024, -0.0405, -0.0375]
+        radius: 0.01624
+      - center: [0.066, -0.0855, -0.0045]
+        radius: 0.01624
+      - center: [0.102, -0.0855, -0.0135]
+        radius: 0.01624
+      - center: [0.1035, -0.0405, -0.0075]
+        radius: 0.01624
+      - center: [0.072, -0.0855, -0.0585]
+        radius: 0.01535
+      - center: [0.0825, -0.0855, -0.003]
+        radius: 0.01535
+      - center: [-0.0255, 0.0045, 0.0015]
+        radius: 0.015
+      - center: [-0.0225, -0.0135, -0.0615]
+        radius: 0.015
+      - center: [-0.0225, 0.0105, -0.0615]
+        radius: 0.015
+      - center: [-0.018, -0.0195, 0.0015]
+        radius: 0.015
+      - center: [-0.0135, -0.0255, -0.0615]
+        radius: 0.015
+      - center: [-0.009, -0.0315, 0.0015]
+        radius: 0.015
+      - center: [-0.0045, -0.036, -0.0615]
+        radius: 0.015
+      - center: [-0.0045, -0.0165, 0.0015]
+        radius: 0.015
+      - center: [-0.0045, 0.0255, 0.0015]
+        radius: 0.015
+      - center: [0.0, -0.042, 0.0015]
+        radius: 0.015
+      - center: [0.0015, 0.0255, -0.0615]
+        radius: 0.015
+      - center: [0.0045, -0.048, -0.0615]
+        radius: 0.015
+      - center: [0.0045, -0.0285, 0.0015]
+        radius: 0.015
+      - center: [0.006, -0.027, -0.0615]
+        radius: 0.015
+      - center: [0.009, -0.0525, 0.0015]
+        radius: 0.015
+      - center: [0.0165, -0.021, 0.0015]
+        radius: 0.015
+      - center: [0.0195, -0.03, -0.0615]
+        radius: 0.015
+      - center: [0.024, -0.0015, 0.0015]
+        radius: 0.015
+      - center: [0.024, 0.0015, -0.0615]
+        radius: 0.015
+      - center: [0.0255, -0.0165, -0.0615]
+        radius: 0.015
+      - center: [0.03, -0.0255, 0.0015]
+        radius: 0.015
+      - center: [0.0345, -0.027, -0.0615]
+        radius: 0.015
+      - center: [0.0405, -0.087, -0.036]
+        radius: 0.015
+      - center: [0.0405, -0.0795, -0.024]
+        radius: 0.015
+      - center: [0.0405, -0.072, -0.036]
+        radius: 0.015
+      - center: [0.0525, -0.087, -0.0285]
+        radius: 0.015
+      - center: [0.066, -0.087, -0.0315]
+        radius: 0.015
+      - center: [0.0735, -0.087, -0.0195]
+        radius: 0.015
+      - center: [0.078, -0.039, -0.0585]
+        radius: 0.015
+      - center: [0.09, -0.087, -0.027]
+        radius: 0.015
+      - center: [0.1035, -0.087, -0.0465]
+        radius: 0.015
+      - center: [0.1095, -0.087, -0.0285]
+        radius: 0.015
+      - center: [0.111, -0.0405, -0.039]
+        radius: 0.015
+      - center: [0.1125, -0.075, -0.021]
+        radius: 0.015
+      - center: [0.0225, 0.0165, -0.0615]
+        radius: 0.01412
+      - center: [0.072, -0.072, 0.0]
+        radius: 0.01412
+      - center: [-0.015, 0.024, -0.0615]
+        radius: 0.0135
+      - center: [0.0105, 0.0255, 0.003]
+        radius: 0.0135
+      - center: [0.0255, 0.0135, 0.0]
+        radius: 0.0135
+      - center: [0.027, -0.0555, 0.0]
+        radius: 0.0135
+      - center: [0.033, -0.054, -0.036]
+        radius: 0.0135
+      - center: [0.0375, -0.003, -0.0615]
+        radius: 0.0135
+      - center: [0.045, -0.036, -0.063]
+        radius: 0.0135
+      - center: [0.0465, -0.063, -0.027]
+        radius: 0.0135
+      - center: [0.0465, -0.0405, -0.027]
+        radius: 0.0135
+      - center: [0.0855, -0.0885, -0.0615]
+        radius: 0.0135
+      - center: [0.1155, -0.084, -0.0405]
+        radius: 0.0135
+      link5:
+      - center: [0.003, -0.012, 0.039]
+        radius: 0.03
+      - center: [-0.0015, 0.0165, 0.039]
+        radius: 0.0255
+      - center: [0.012, 0.0075, 0.0585]
+        radius: 0.02206
+      - center: [-0.0285, -0.012, 0.051]
+        radius: 0.02112
+      - center: [-0.0285, 0.012, 0.051]
+        radius: 0.02112
+      - center: [0.015, 0.0075, 0.021]
+        radius: 0.021
+      - center: [-0.03, 0.0, 0.0675]
+        radius: 0.0195
+      - center: [-0.0075, 0.0, 0.063]
+        radius: 0.0195
+      - center: [-0.0075, 0.006, 0.018]
+        radius: 0.01871
+      - center: [-0.024, -0.0195, 0.021]
+        radius: 0.018
+      - center: [-0.024, -0.0045, 0.0285]
+        radius: 0.018
+      - center: [-0.024, 0.018, 0.0195]
+        radius: 0.018
+      - center: [-0.0255, -0.0015, 0.012]
+        radius: 0.0165
+      - center: [-0.0225, -0.033, 0.051]
+        radius: 0.0165
+      - center: [-0.0225, 0.0315, 0.03]
+        radius: 0.0165
+      - center: [-0.0225, 0.0315, 0.051]
+        radius: 0.0165
+      - center: [-0.0195, -0.033, 0.03]
+        radius: 0.0165
+      - center: [-0.0135, -0.003, 0.0015]
+        radius: 0.0165
+      - center: [0.003, -0.009, 0.0015]
+        radius: 0.0165
+      - center: [0.003, 0.009, 0.0015]
+        radius: 0.0165
+      - center: [-0.0135, -0.018, 0.063]
+        radius: 0.01624
+      - center: [-0.0135, 0.018, 0.063]
+        radius: 0.01624
+      - center: [0.0195, -0.012, 0.063]
+        radius: 0.01624
+      - center: [-0.0255, -0.0225, 0.0045]
+        radius: 0.01535
+      - center: [0.0165, 0.0, 0.0015]
+        radius: 0.01535
+      - center: [-0.036, -0.018, 0.069]
+        radius: 0.015
+      - center: [-0.036, 0.018, 0.069]
+        radius: 0.015
+      - center: [-0.024, 0.012, 0.003]
+        radius: 0.015
+      - center: [-0.0165, 0.024, 0.003]
+        radius: 0.015
+      - center: [-0.0105, -0.0375, 0.042]
+        radius: 0.015
+      - center: [-0.0105, -0.024, 0.003]
+        radius: 0.015
+      - center: [-0.0015, 0.024, 0.003]
+        radius: 0.015
+      - center: [0.006, -0.024, 0.003]
+        radius: 0.015
+      - center: [0.0135, 0.021, 0.003]
+        radius: 0.015
+      - center: [0.018, -0.0165, 0.003]
+        radius: 0.015
+      - center: [0.0195, 0.0255, 0.03]
+        radius: 0.015
+      - center: [0.0195, 0.0255, 0.048]
+        radius: 0.015
+      - center: [0.021, -0.0135, 0.0165]
+        radius: 0.015
+      - center: [0.024, 0.012, 0.003]
+        radius: 0.015
+      - center: [0.0285, -0.0075, 0.003]
+        radius: 0.015
+      - center: [-0.0105, -0.012, 0.0135]
+        radius: 0.01412
+      - center: [-0.0255, -0.0195, 0.078]
+        radius: 0.0135
+      - center: [-0.0255, 0.015, 0.078]
+        radius: 0.0135
+      - center: [-0.0135, 0.039, 0.0405]
+        radius: 0.0135
+      link6:
+      - center: [-0.024, -0.003, 0.0045]
+        radius: 0.018
+      - center: [-0.009, -0.018, 0.0045]
+        radius: 0.018
+      - center: [-0.009, 0.018, 0.0045]
+        radius: 0.018
+      - center: [0.0075, -0.0225, 0.0045]
+        radius: 0.018
+      - center: [0.0075, 0.021, 0.0045]
+        radius: 0.018
+      - center: [0.0165, -0.0075, 0.0045]
+        radius: 0.018
+      - center: [0.0195, 0.009, 0.0045]
+        radius: 0.018
+      - center: [-0.0075, -0.0015, 0.0015]
+        radius: 0.01412
+      - center: [-0.0255, 0.0135, 0.0]
+        radius: 0.0135
+      camera_mount:
+      - center: [-0.0005, -0.033, 0.0]
+        radius: 0.0255
+      - center: [-0.0005, -0.0075, 0.0]
+        radius: 0.0255
+      - center: [-0.0005, 0.018, 0.0]
+        radius: 0.0255
+      - center: [-0.05, 0.0, -0.06]
+        radius: 0.024
+      - center: [-0.035, 0.0, -0.042]
+        radius: 0.024
+      - center: [-0.02, 0.0, -0.024]
+        radius: 0.024
+      - center: [-0.008, 0.0405, -0.0075]
+        radius: 0.018
+      - center: [0.0055, 0.0405, 0.0075]
+        radius: 0.018
+      - center: [-0.011, 0.0375, 0.0105]
+        radius: 0.015
+      - center: [0.0085, 0.039, -0.0105]
+        radius: 0.015
+      gripper_link:
+      - center: [-0.1215, -0.009, -0.0045]
+        radius: 0.0315
+      - center: [-0.1125, 0.015, 0.012]
+        radius: 0.02261
+      - center: [-0.1305, 0.0195, 0.0]
+        radius: 0.0225
+      - center: [-0.132, 0.0075, 0.0195]
+        radius: 0.021
+      - center: [-0.096, 0.0, -0.027]
+        radius: 0.02049
+      - center: [-0.096, 0.0, 0.027]
+        radius: 0.02049
+      - center: [-0.111, 0.0195, -0.009]
+        radius: 0.02008
+      - center: [-0.096, -0.0315, 0.0]
+        radius: 0.0195
+      - center: [-0.096, 0.0315, 0.0]
+        radius: 0.0195
+      - center: [-0.0975, -0.0855, 0.0]
+        radius: 0.01818
+      - center: [-0.0975, 0.0855, 0.0]
+        radius: 0.01818
+      - center: [-0.0795, -0.0855, 0.0]
+        radius: 0.01818
+      - center: [-0.0795, 0.0855, 0.0]
+        radius: 0.01818
+      - center: [-0.099, -0.0675, 0.0]
+        radius: 0.018
+      - center: [-0.099, -0.0495, 0.0]
+        radius: 0.018
+      - center: [-0.099, 0.0495, 0.0]
+        radius: 0.018
+      - center: [-0.099, 0.0675, 0.0]
+        radius: 0.018
+      - center: [-0.084, -0.06, 0.0]
+        radius: 0.018
+      - center: [-0.084, 0.057, 0.0]
+        radius: 0.018
+      - center: [-0.081, -0.0435, 0.0]
+        radius: 0.018
+      - center: [-0.0795, 0.0405, 0.0]
+        radius: 0.018
+      - center: [-0.135, 0.009, -0.0255]
+        radius: 0.01761
+      - center: [-0.1455, -0.0195, 0.0195]
+        radius: 0.01741
+      - center: [-0.078, -0.027, 0.0]
+        radius: 0.01741
+      - center: [-0.141, -0.0105, -0.0285]
+        radius: 0.01674
+      - center: [-0.147, -0.021, -0.018]
+        radius: 0.0165
+      - center: [-0.147, -0.0105, 0.033]
+        radius: 0.0165
+      - center: [-0.147, 0.0105, 0.033]
+        radius: 0.0165
+      - center: [-0.147, 0.018, -0.018]
+        radius: 0.0165
+      - center: [-0.147, 0.021, 0.018]
+        radius: 0.0165
+      - center: [-0.1155, -0.003, 0.0255]
+        radius: 0.0165
+      - center: [-0.078, -0.0105, -0.0015]
+        radius: 0.0165
+      - center: [-0.078, 0.006, -0.0015]
+        radius: 0.0165
+      - center: [-0.147, 0.0075, -0.006]
+        radius: 0.01624
+      - center: [-0.1035, -0.0165, 0.0195]
+        radius: 0.01624
+      - center: [-0.096, -0.021, -0.0165]
+        radius: 0.01535
+      - center: [-0.0945, 0.018, -0.0195]
+        radius: 0.01535
+      - center: [-0.1485, -0.0285, -0.0045]
+        radius: 0.015
+      - center: [-0.1485, -0.0075, 0.009]
+        radius: 0.015
+      - center: [-0.1485, -0.0015, -0.018]
+        radius: 0.015
+      - center: [-0.1485, 0.0, -0.0375]
+        radius: 0.015
+      - center: [-0.1365, 0.0, 0.0375]
+        radius: 0.015
+      - center: [-0.0795, 0.021, 0.003]
+        radius: 0.015
+      - center: [-0.132, -0.012, 0.0255]
+        radius: 0.0146
+      - center: [-0.1485, 0.03, -0.0075]
+        radius: 0.01412
+      - center: [-0.093, 0.018, 0.021]
+        radius: 0.01412
+      - center: [-0.15, 0.0075, 0.009]
+        radius: 0.0135
+      - center: [-0.15, 0.0135, -0.0345]
+        radius: 0.0135
+      - center: [-0.15, 0.03, 0.006]
+        radius: 0.0135
+      - center: [-0.141, -0.03, 0.0075]
+        radius: 0.0135
+      - center: [-0.1335, -0.0015, -0.039]
+        radius: 0.0135
+      - center: [-0.1185, 0.0135, -0.0255]
+        radius: 0.0135
+      - center: [-0.0945, 0.003, 0.003]
+        radius: 0.0135
+      - center: [-0.0855, -0.015, -0.033]
+        radius: 0.0135
+      - center: [-0.0855, -0.015, 0.033]
+        radius: 0.0135
+      - center: [-0.0855, 0.015, -0.033]
+        radius: 0.0135
+      - center: [-0.0855, 0.015, 0.033]
+        radius: 0.0135
+      gripper_left:
+      - center: [-0.0555, -0.0435, -0.0165]
+        radius: 0.0165
+      - center: [-0.0405, -0.0435, -0.0135]
+        radius: 0.0165
+      - center: [-0.0255, -0.0435, -0.0165]
+        radius: 0.0165
+      - center: [-0.0105, -0.0435, -0.0135]
+        radius: 0.0165
+      - center: [0.0, -0.0225, -0.0195]
+        radius: 0.0135
+      - center: [0.0, -0.0225, -0.006]
+        radius: 0.0135
+      - center: [0.0, -0.0225, 0.0075]
+        radius: 0.0135
+      - center: [0.0, -0.0195, 0.0195]
+        radius: 0.0135
+      - center: [0.0, -0.0105, -0.0165]
+        radius: 0.0135
+      - center: [0.0, -0.0105, -0.003]
+        radius: 0.0135
+      - center: [0.0, -0.0105, 0.0105]
+        radius: 0.0135
+      - center: [0.0, 0.0015, -0.0135]
+        radius: 0.0135
+      - center: [0.0, 0.0015, 0.0]
+        radius: 0.0135
+      - center: [0.0, 0.0015, 0.0135]
+        radius: 0.0135
+      - center: [0.0, 0.0135, -0.0105]
+        radius: 0.0135
+      - center: [0.0, 0.0135, 0.003]
+        radius: 0.0135
+      - center: [0.0, 0.0255, -0.006]
+        radius: 0.0135
+      - center: [0.0, 0.0285, 0.006]
+        radius: 0.0135
+      - center: [0.0, 0.0375, -0.003]
+        radius: 0.0135
+      - center: [0.015, -0.0255, -0.0105]
+        radius: 0.0225
+      - center: [0.018, -0.0255, 0.0105]
+        radius: 0.0225
+      - center: [0.0075, -0.009, 0.0015]
+        radius: 0.018
+      - center: [0.0075, 0.006, -0.0075]
+        radius: 0.018
+      - center: [0.0075, 0.0195, 0.003]
+        radius: 0.018
+      - center: [0.027, -0.042, -0.0165]
+        radius: 0.0165
+      - center: [0.0045, -0.045, -0.018]
+        radius: 0.015
+      - center: [0.0045, 0.036, -0.0015]
+        radius: 0.015
+      - center: [0.0045, 0.0045, 0.012]
+        radius: 0.01412
+      - center: [0.003, -0.0135, 0.0195]
+        radius: 0.0135
+      - center: [0.003, -0.009, -0.018]
+        radius: 0.0135
+      - center: [0.0135, -0.0465, -0.0075]
+        radius: 0.0135
+      - center: [0.033, -0.0345, -0.003]
+        radius: 0.0135
+      gripper_right:
+      - center: [-0.0555, 0.0435, 0.0135]
+        radius: 0.0165
+      - center: [-0.0405, 0.0435, 0.0105]
+        radius: 0.0165
+      - center: [-0.0255, 0.0435, 0.0135]
+        radius: 0.0165
+      - center: [-0.0105, 0.0435, 0.0105]
+        radius: 0.0165
+      - center: [0.0, -0.042, -0.0015]
+        radius: 0.0135
+      - center: [0.0, -0.03, -0.0045]
+        radius: 0.0135
+      - center: [0.0, -0.024, 0.0075]
+        radius: 0.0135
+      - center: [0.0, -0.018, -0.009]
+        radius: 0.0135
+      - center: [0.0, -0.012, 0.003]
+        radius: 0.0135
+      - center: [0.0, -0.006, -0.012]
+        radius: 0.0135
+      - center: [0.0, -0.0045, 0.0135]
+        radius: 0.0135
+      - center: [0.0, 0.0, 0.0]
+        radius: 0.0135
+      - center: [0.0, 0.006, -0.0165]
+        radius: 0.0135
+      - center: [0.0, 0.0075, 0.0105]
+        radius: 0.0135
+      - center: [0.0, 0.012, -0.0045]
+        radius: 0.0135
+      - center: [0.0, 0.0165, 0.0195]
+        radius: 0.0135
+      - center: [0.0, 0.018, -0.0195]
+        radius: 0.0135
+      - center: [0.0, 0.0195, 0.006]
+        radius: 0.0135
+      - center: [0.0015, 0.0405, 0.0195]
+        radius: 0.0135
+      - center: [0.015, 0.0255, -0.0105]
+        radius: 0.0225
+      - center: [0.018, 0.0255, 0.0105]
+        radius: 0.0225
+      - center: [0.0075, -0.03, 0.0]
+        radius: 0.018
+      - center: [0.0075, -0.0135, -0.0045]
+        radius: 0.018
+      - center: [0.0075, -0.0015, 0.0075]
+        radius: 0.018
+      - center: [0.0075, 0.003, -0.0105]
+        radius: 0.018
+      - center: [0.006, 0.0435, 0.0105]
+        radius: 0.0165
+      - center: [0.0225, 0.045, 0.018]
+        radius: 0.015
+      - center: [0.003, 0.012, 0.018]
+        radius: 0.0135
+      - center: [0.0315, 0.042, 0.0075]
+        radius: 0.0135
+      - center: [0.033, 0.0345, -0.003]
+        radius: 0.0135

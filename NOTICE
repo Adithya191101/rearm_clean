@@ -1,0 +1,16 @@
+Seeed Studio reArm B601-DM Isaac ROS Manipulation Reference Architecture
+Copyright 2026 project contributors
+
+This product includes modified source from NVIDIA Isaac ROS Manipulation,
+licensed under the Apache License 2.0.
+
+This product includes source and robot assets originating from Seeed Studio.
+The vendored reArm B601-DM Isaac Sim asset is licensed under the MIT License;
+its license is retained with the asset.
+
+This product includes topic_based_ros2_control source licensed under the
+3-Clause BSD License.
+
+See THIRD_PARTY_LICENSES.md for paths, versions, and additional terms.
+NVIDIA, Isaac, CUDA, TensorRT, Intel, RealSense, Seeed Studio, and reArm are
+trademarks of their respective owners. This notice grants no trademark rights.

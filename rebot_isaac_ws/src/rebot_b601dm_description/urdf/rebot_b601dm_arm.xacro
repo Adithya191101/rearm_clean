@@ -1,0 +1,210 @@
+<?xml version="1.0"?>
+<!--
+  reBot B601-DM arm: base_link .. link6. Shared by BOTH generated products
+  (planning model and SDK driver model), so any geometry fix lands in one place.
+
+  Geometry, masses and inertia tensors are transcribed verbatim from Seeed's
+  SolidWorks export (reBot_B601_DM_with_gripper.urdf). Do not "clean up" the
+  digits — the FK tests assert absolute poses derived from exactly these values.
+
+  Deliberate change from upstream: joint velocity limits.
+    upstream: joint1-3 = 50 rad/s, joint4-6 = 200 rad/s
+    here:     joint1-3 =  5 rad/s, joint4-6 =   3 rad/s
+  Those upstream numbers are export artifacts, not physical limits (200 rad/s is
+  ~1900 rpm at the flange). They matter because cuMotion reads limits from the
+  URDF, not from joint_limits.yaml, so a YAML override alone leaves the planner
+  free to emit trajectories the hardware cannot track. The values here match the
+  SDK's own POS_VEL.vlim (5.0 for j1-3, 3.0 for j4-6) in rebotarm_dm.yaml.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Velocity limits, kept as properties so the values appear exactly once. -->
+  <xacro:property name="vel_j123" value="5.0"/>
+  <xacro:property name="vel_j456" value="3.0"/>
+
+  <xacro:macro name="rebot_b601dm_arm" params="prefix mesh_package">
+
+    <link name="${prefix}base_link">
+      <inertial>
+        <origin xyz="-2.70523135620574E-06 -7.70134319499296E-06 0.028980835090929" rpy="0 0 0"/>
+        <mass value="0.79874480798149"/>
+        <inertia ixx="0.00167922927706365" ixy="1.88775164237686E-09" ixz="-1.97136369561029E-08"
+                 iyy="0.00100413042930826" iyz="2.1823444305057E-07"  izz="0.00243992061460991"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/visual/base_link.STL"/></geometry>
+        <material name="rebot_grey"><color rgba="0.627450980392157 0.627450980392157 0.627450980392157 1"/></material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/collision/base_link.STL"/></geometry>
+      </collision>
+    </link>
+
+    <link name="${prefix}link1">
+      <inertial>
+        <origin xyz="1.20584908205569E-05 -0.00052246270024925 0.0197721792915801" rpy="0 0 0"/>
+        <mass value="0.0840736498625263"/>
+        <inertia ixx="8.53930680558479E-05" ixy="5.36083090564592E-11" ixz="8.1878892265138E-06"
+                 iyy="5.08885968641724E-05" iyz="1.61532065580032E-10" izz="8.03867731313707E-05"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/visual/link1.STL"/></geometry>
+        <material name="rebot_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/collision/link1.STL"/></geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}joint1" type="revolute">
+      <origin xyz="-8.416E-05 0 0.08465" rpy="0 0 0"/>
+      <parent link="${prefix}base_link"/>
+      <child  link="${prefix}link1"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-2.8" upper="2.8" effort="27" velocity="${vel_j123}"/>
+    </joint>
+
+    <link name="${prefix}link2">
+      <inertial>
+        <origin xyz="-0.13224463371047 -0.00305031595315752 -0.0309299400248282" rpy="0 0 0"/>
+        <mass value="0.710394385134637"/>
+        <inertia ixx="0.00025002655459552" ixy="1.60716279794484E-06" ixz="2.51351488848234E-09"
+                 iyy="0.00186321981627926" iyz="4.36542160316282E-07" izz="0.00186007710433815"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/visual/link2.STL"/></geometry>
+        <material name="rebot_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/collision/link2.STL"/></geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}joint2" type="revolute">
+      <origin xyz="0.020084 0.031625 0.05555" rpy="-1.5708 0 0"/>
+      <parent link="${prefix}link1"/>
+      <child  link="${prefix}link2"/>
+      <axis xyz="0 0 -1"/>
+      <limit lower="-3.14" upper="0" effort="27" velocity="${vel_j123}"/>
+    </joint>
+
+    <link name="${prefix}link3">
+      <inertial>
+        <origin xyz="0.121507513231219 -0.0537568110789665 -0.0310861781010256" rpy="0 0 0"/>
+        <mass value="0.524941641478664"/>
+        <inertia ixx="0.000160157099221732" ixy="-1.6160403467948E-05" ixz="-3.33082723997513E-06"
+                 iyy="0.00124905589930288"  iyz="2.96940939137566E-07" izz="0.00125568117526574"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/visual/link3.STL"/></geometry>
+        <material name="rebot_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/collision/link3.STL"/></geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}joint3" type="revolute">
+      <origin xyz="-0.264 0 0" rpy="0 0 0"/>
+      <parent link="${prefix}link2"/>
+      <child  link="${prefix}link3"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-3.14" upper="0" effort="27" velocity="${vel_j123}"/>
+    </joint>
+
+    <link name="${prefix}link4">
+      <inertial>
+        <origin xyz="0.0612381846323297 -0.0515229512574568 -0.0303340352965348" rpy="0 0 0"/>
+        <mass value="0.191139210973019"/>
+        <inertia ixx="7.18184289370392E-05" ixy="-1.12301944951731E-05" ixz="-5.19641435494074E-08"
+                 iyy="0.000112900067589117" iyz="2.21782677668291E-07"  izz="0.000101141504876404"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/visual/link4.STL"/></geometry>
+        <material name="rebot_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/collision/link4.STL"/></geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}joint4" type="revolute">
+      <origin xyz="0.2426 -0.054 -0.001625" rpy="0 0 0"/>
+      <parent link="${prefix}link3"/>
+      <child  link="${prefix}link4"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-1.87" upper="1.57" effort="7" velocity="${vel_j456}"/>
+    </joint>
+
+    <link name="${prefix}link5">
+      <inertial>
+        <origin xyz="-0.00504933072901427 1.74603011302099E-06 0.0387866303374511" rpy="0 0 0"/>
+        <mass value="0.150004102113546"/>
+        <inertia ixx="6.79196566487009E-05" ixy="-7.20237013118825E-10" ixz="-2.82554291275232E-06"
+                 iyy="5.17186991502111E-05" iyz="9.87947763397051E-09"  izz="5.43656904496111E-05"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/visual/link5.STL"/></geometry>
+        <material name="rebot_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/collision/link5.STL"/></geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}joint5" type="revolute">
+      <origin xyz="0.078308 -0.0375 -0.03" rpy="-1.5708 0 0"/>
+      <parent link="${prefix}link4"/>
+      <child  link="${prefix}link5"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-1.57" upper="1.57" effort="7" velocity="${vel_j456}"/>
+    </joint>
+
+    <link name="${prefix}link6">
+      <inertial>
+        <origin xyz="-1.76034430143801E-05 7.61449749622373E-09 0.00431722560895041" rpy="0 0 0"/>
+        <mass value="0.0187271664583674"/>
+        <inertia ixx="4.42801172036323E-06" ixy="1.26927907319828E-13" ixz="-1.52049684129749E-10"
+                 iyy="4.37712746743999E-06" iyz="-2.5907655197107E-13" izz="8.55249688102954E-06"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/visual/link6.STL"/></geometry>
+        <material name="rebot_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://${mesh_package}/meshes/collision/link6.STL"/></geometry>
+      </collision>
+    </link>
+
+    <!--
+      joint6 origin is the WITH-GRIPPER value (0.023692), which is the canonical
+      one. Seeed's fixend URDF uses 0.028008 paired with a 0.15539 end offset;
+      those two cancel to within 4 um of this model's 0.023692 + 0.15971, because
+      the joint6 origin delta rotates onto link6 -Z through rpy=(0, 1.5708, 0).
+      The real difference between the two upstream models is a 180-degree flip
+      about X, not a translation — see docs/KDR-001-kinematic-frames.md.
+    -->
+    <joint name="${prefix}joint6" type="revolute">
+      <origin xyz="0.023692 0 0.04" rpy="0 1.5708 0"/>
+      <parent link="${prefix}link5"/>
+      <child  link="${prefix}link6"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-3.14" upper="3.14" effort="7" velocity="${vel_j456}"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

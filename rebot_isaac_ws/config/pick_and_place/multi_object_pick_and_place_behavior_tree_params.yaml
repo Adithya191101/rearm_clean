@@ -1,0 +1,262 @@
+# reBot B601-DM configuration of NVIDIA's /multi_object_pick_and_place tree.
+# SIM ONLY. There is no reBot hardware in this build.
+#
+# FILENAME IS FIXED. rebot_sim_launch_params.yaml names this file as
+#   ${ISAAC_ROS_MANIPULATION_PICK_AND_PLACE_CONFIG_DIR}/multi_object_pick_and_place_behavior_tree_params.yaml
+# and docker/entrypoint.sh sets that variable to $ISAAC_ROS_WS/config/pick_and_place.
+# scripts/install_pick_and_place_params.py copies this file there.
+#
+# EVERY UPSTREAM KEY IS PRESENT ON PURPOSE. Each *Config.from_dict in
+# isaac_ros_manipulation_orchestration/utils/params_loader.py is a plain
+# params.get(key, default), so an omitted key silently takes a UR/Robotiq value.
+# The worst case is enable_aabb_clearing, whose from_dict default is False while
+# upstream's own YAML sets True -- deleting the key inverts the behaviour and
+# nothing complains. rebot_b601dm_orchestration/bt_params.py enforces the full
+# key set; test/test_bt_params.py runs it against this file.
+#
+# Structured as a minimal diff from
+# isaac_ros_manipulation_pick_and_place/params/multi_object_pick_and_place_behavior_tree_params.yaml,
+# following the precedent of that package's flexiv_pick_and_place_* pair.
+# Every divergence carries its reason.
+
+behavior_tree_params:
+  multi_object_pick_and_place:
+
+    assign_object_name:
+      service_name: 'assign_name_to_object'
+
+    attach_object:
+      # HARDCODED UPSTREAM, not configurable: attach_object_server.py does
+      #   ActionServer(self, AttachObject, 'attach_object', ...)
+      # The server's `action_names` parameter (default ['segmenter_attach_object',
+      # 'planner_attach_object']) is a different thing entirely -- the list of
+      # downstream UpdateLinkSpheres CLIENTS it fans out to, matching
+      # robot_segmenter.py's and cumotion_planner.py's update_link_sphere_server
+      # defaults. Not a competing name for this action.
+      action_server_name: 'attach_object'
+      shape: 'CUSTOM_MESH'
+      # [1,1,1] is required for CUSTOM_MESH: the mesh carries its own extents.
+      scale: [1.0, 1.0, 1.0]
+      # BOTH gripper_tcp, not upstream's placeholder 'gripper_frame'/'grasp_frame'
+      # (neither is a link in any reBot URDF). The grasp set stores
+      # T_object_gripper_tcp and upstream composes
+      #   object_pose_grasp = object_pose_gripper @ gripper_pose_grasp
+      # so making both frames gripper_tcp leaves the intermediate transform as
+      # identity, which is exactly what our grasp file already encodes. It also
+      # makes attach_object.py's can_transform() gate trivially satisfiable.
+      # NOT gripper_link: that is 44.3 mm behind the grasp point along the
+      # approach axis, and attaching there puts the carried collision geometry
+      # 44 mm from the real object.
+      gripper_frame: 'gripper_tcp'
+      grasp_frame: 'gripper_tcp'
+
+    close_gripper:
+      # Our adapter's server. gripper_adapter hosts '~/gripper_cmd' under node
+      # name 'gripper_adapter'.
+      #
+      # RESOLVED: this file wins, and the apparent conflict with
+      # launch_utils.compute_gripper_action_name(REBOT) ->
+      # '/rebot_gripper_controller/gripper_cmd' is not a conflict at all --
+      # that value is DEAD. It is assigned to DriverConfig.gripper_action_name
+      # (config.py:293) and nothing ever reads that attribute; the only readers
+      # of any gripper_action_name are pick_operations.py:234/338 and
+      # drop_operations.py:267, which take it from open_gripper_config /
+      # close_gripper_config, i.e. from THIS yaml via params_loader.py:212/231.
+      # So do NOT "reconcile" the two by editing this key to match the
+      # dispatcher: that would point the BT at a server that does not exist.
+      # Fix the dispatcher instead, or leave it as the unused string it is.
+      gripper_action_name: '/gripper_adapter/gripper_cmd'
+      # METRES of PER-JAW travel, 0.0 closed .. 0.0715 open. NOT a 0-1 fraction,
+      # NOT Robotiq knuckle radians, NOT the sum of both jaws.
+      #
+      # The isolated physical probe first contacts near 0.031 m/jaw. Targeting
+      # 0.019 m adds the validated 12 mm preload required to lift the 349 g can.
+      # PhysX contact stops the fingers; the object remains fully dynamic.
+      close_position: 0.019
+      # Split by the simulator into 30 N per physical jaw drive. The additional
+      # preload keeps the bottom-up can from slipping during the 180-degree turn.
+      max_effort: 60.0
+
+    detach_object:
+      # Same server. attach_object_server.py hosts ONE ActionServer and switches
+      # on goal.attach_object; there is no separate detach server.
+      action_server_name: 'attach_object'
+
+    detect_object:
+      action_server_name: '/get_objects'
+      detection_confidence_threshold: 0.5
+
+    execute_trajectory:
+      action_server_name: 'execute_trajectory'
+      index: 0
+
+    interactive_marker:
+      # Empty, like Flexiv's. The reBot meshes are per-link STLs
+      # (gripper_link.STL, gripper_left.STL, gripper_right.STL), not one combined
+      # end-effector mesh. A non-empty value that does not resolve to a real file
+      # is a hard AttachObject goal rejection: the server checks
+      # os.path.isfile() on MESH_RESOURCE paths, so an unexpanded ${ISAAC_ROS_WS}
+      # fails the goal outright.
+      mesh_resource_uri: ''
+      reference_frame: 'base_link'
+      end_effector_frame: 'gripper_tcp'
+      user_confirmation_timeout: 60.0
+
+    mesh_assigner:
+      service_name: 'add_mesh_to_object'
+
+    object_selector:
+      action_server_name: '/get_selected_object'
+
+    open_gripper:
+      gripper_action_name: '/gripper_adapter/gripper_cmd'
+      # 0.045 per jaw = 89.94 mm gap, 23.94 mm of clearance around the 66 mm can.
+      # LARGER means MORE OPEN for these prismatic jaws -- the opposite of
+      # Robotiq's knuckle-angle convention (open 0.0, close 0.65 rad), whose
+      # polarity must not be inherited. Matches the grasp set's
+      # pregrasp_cspace_position 0.045.
+      open_position: 0.045
+      max_effort: 10.0
+
+    plan_to_grasp:
+      action_server_name: 'cumotion/motion_plan'
+      link_name: 'base_link'
+      # 0.2 rather than the sim bringup's 0.6: this is the constrained approach
+      # and retract, where a faster traverse buys nothing and makes a contact
+      # overshoot more likely.
+      time_dilation_factor: 0.2
+      # PREGRASP standoff, expressed IN THE GOAL (gripper_tcp) FRAME
+      # (grasp_approach_constraint_in_goal_frame: true below). For this robot the
+      # TCP APPROACH axis is +X (jaws close on what lies ahead along +X), so the
+      # pregrasp backs off along -X. This is NOT the UR/Flexiv [0, 0, -0.15]: their
+      # tool approach axis is +Z. With the UR value the reBot would back off along
+      # its own +/-Z, which for a HORIZONTAL side grasp lifts the pregrasp straight
+      # up off the can instead of pulling it radially outward, so the approach
+      # segment never lines up with the horizontal grasp and IK/goalset planning
+      # fails. -0.15 m matches the grasp set's 0.10 m pregrasp plus margin.
+      grasp_approach_offset_distance: [-0.15, 0.0, 0.0]
+      # 0.05 m, NOT the upstream 0.001 m. 1 mm of straight-line tolerance on the
+      # approach is so tight that the trajectory optimizer intermittently returns
+      # TRAJECTORY_OPTIMIZATION_FAILURE for a grasp whose IK is perfectly solvable
+      # (measured: the grasp plans as a bare plan_pose 3/3, but the constrained
+      # approach segment fails ~half the time from the inspection start). 50 mm
+      # keeps the approach visibly straight while giving the optimizer room to
+      # converge, making the pick reliable rather than a coin flip.
+      grasp_translation_path_deviation_limit: 0.05
+      grasp_translation_terminal_deviation_limit: -1.0
+      # Orientation path-axis constraint OFF: forcing a roll-free approach axis on
+      # top of the tight translation is the other half of the over-constraint that
+      # made the grasp segment fail to optimize. The grasp orientation is still
+      # pinned at the terminal (the goalset pose); only the mid-path axis lock is
+      # released.
+      grasp_enable_orientation_path_axis_constraint: false
+      grasp_orientation_terminal_deviation_limit: -1.0
+      grasp_orientation_path_axis_deviation_limit: -1.0
+      # RETRACT is in the WORLD frame (retract_constraint_in_goal_frame: false
+      # below), so +Z here lifts the grasped can straight UP off the table --
+      # correct for a side grasp too, and independent of the TCP orientation.
+      retract_offset_distance: [0.0, 0.0, 0.15]
+      # Same relaxation as the approach: 50 mm, not 1 mm, so the lift optimizes
+      # reliably. The retract still rises ~straight up.
+      retract_translation_path_deviation_limit: 0.05
+      retract_translation_terminal_deviation_limit: -1.0
+      retract_enable_orientation_path_axis_constraint: false
+      retract_orientation_terminal_deviation_limit: -1.0
+      retract_orientation_path_axis_deviation_limit: -1.0
+      grasp_approach_constraint_in_goal_frame: true
+      retract_constraint_in_goal_frame: false
+      update_planning_scene: true
+      world_frame: 'world'
+      # MUST stay true. With it false, cuMotion does not clear ESDF voxels around
+      # the target before IK, nvblox ghost voxels make the grasp pose look
+      # occupied, and IK reports INVERSE_KINEMATICS_FAILURE for a pose in free
+      # space. Padding is applied as HALF per side upstream
+      # (min - padding/2, max + padding/2), so these are total widths.
+      enable_aabb_clearing: true
+      esdf_clearing_padding: [0.02, 0.02, 0.02]
+      aabb_clearing_shape: 'CUSTOM_MESH'
+      aabb_clearing_shape_scale: [1.0, 1.0, 1.0]
+
+    plan_to_pose:
+      action_server_name: 'cumotion/motion_plan'
+      link_name: 'base_link'
+      time_dilation_factor: 0.2
+      update_planning_scene: true
+      aabb_clearing_shape: 'SPHERE'
+      aabb_clearing_shape_scale: [0.1, 0.1, 0.1]
+      # true, NOT Flexiv's false. Flexiv's copy ships
+      # plan_to_pose.enable_aabb_clearing: false, which would fail upstream's own
+      # test_behavior_tree_params.py -- that test never sees it because
+      # PARAMS_FILE_NAME is hardcoded to this filename inside
+      # isaac_ros_manipulation_pick_and_place. Do not copy that value.
+      enable_aabb_clearing: true
+      esdf_clearing_padding: [0.05, 0.05, 0.05]
+      # world_frame IS read by PlanToPoseConfig.from_dict (default 'world');
+      # only upstream's YAML omits the key.
+      world_frame: 'world'
+
+    pose_estimation:
+      action_server_name: '/get_object_pose'
+      base_frame_id: 'base_link'
+      # MUST match the frame_id stamped on the RGB/depth images FoundationPose
+      # consumes -- FP reports its 6DOF pose relative to THAT frame, and
+      # pose_estimation.py composes base_pose_object = base_pose_<this> @
+      # camera_pose_object. Detection + pose run on the STATIC tabletop camera
+      # scene_cam_0 (see IsaacSimCameraConfig repoint in config.py and
+      # pick_scene.py SCENE_CAMS), whose images are stamped frame_id 'scene_cam_0'
+      # and whose TF pick_scene.py publishes at (0.75,-0.45,0.70). Was
+      # 'camera_color_optical_frame' (the WRIST camera on link6) -- a different
+      # physical camera pointing elsewhere; using it applied the wrong extrinsic
+      # and put the object at a garbage pose (behind the base, below the floor),
+      # so every grasp failed cuMotion IK. NOT 'camera_1_color_optical_frame'
+      # (RealSense; none in this build).
+      camera_frame_id: 'scene_cam_0'
+      workspace_bounds:
+        diagonal: []
+
+    publish_static_planning_scene:
+      service_name: 'publish_static_planning_scene'
+      scene_file_path: ''
+
+    read_grasp_poses:
+      publish_grasp_poses: true
+
+    retry_config:
+      max_planning_retries: 5
+      max_controller_retries: 2
+      max_detection_retries: 3
+      max_pose_estimation_retries: 3
+      # 2, upstream's value, kept deliberately. A gripper retry re-issues the
+      # SAME close; it cannot convert an EMPTY close into a grasp, because the
+      # can has not moved. More retries only delay the failure report.
+      max_gripper_retries: 2
+      max_attachment_retries: 3
+
+    server_timeout_config:
+      startup_server_timeout_sec: 120.0
+      runtime_retry_timeout_sec: 60.0
+      server_check_interval_sec: 30.0
+
+    stale_detection:
+      timeout_duration: 300.0
+
+    switch_controllers:
+      arm:
+        # The name in
+        # isaac_ros_manipulation_rebot_robot_description/config/ros2_control_controllers_sim.yaml.
+        # The controller TYPE is the plain
+        # joint_trajectory_controller/JointTrajectoryController; only the name is
+        # shared with the UR family, because that string is hardcoded in the
+        # shared test harness.
+        controllers_to_activate: ['scaled_joint_trajectory_controller']
+        controllers_to_deactivate: []
+        strictness: 4  # FORCE_AUTO
+      tool:
+        # EMPTY, like Flexiv's. The jaws are driven through the gripper adapter's
+        # GripperCommand server, not by a ros2_control gripper controller, and
+        # ros2_control_controllers_sim.yaml declares no gripper controller at
+        # all. SwitchController on a nonexistent controller fails the tree during
+        # startup, before any motion.
+        controllers_to_activate: []
+        controllers_to_deactivate: []
+        strictness: 4  # FORCE_AUTO

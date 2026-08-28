@@ -1,0 +1,32 @@
+# Generated dependency checkouts
+/rebot_isaac_ws/.upstream/
+/rebot_isaac_ws/src/isaac_ros_manipulation/
+/rebot_isaac_ws/src/topic_based_ros2_control/
+/rebot_isaac_ws/src/rebot_b601dm_description/meshes/visual/
+/rebot_isaac_ws/usd/vendor/reBot_B601_DM
+
+# Build and runtime output
+/rebot_isaac_ws/build/
+/rebot_isaac_ws/install/
+/rebot_isaac_ws/log/
+/rebot_isaac_ws/tmp/
+/rebot_isaac_ws/media/
+/rebot_isaac_ws/isaac_ros_assets/
+/.rebot/
+/.venv/
+/repro_cache/
+
+# Python and editor output
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Crash dumps
+core
+core.[0-9]*

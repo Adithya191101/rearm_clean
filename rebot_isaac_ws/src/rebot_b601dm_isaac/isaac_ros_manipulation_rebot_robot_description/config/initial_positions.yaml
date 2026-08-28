@@ -1,0 +1,19 @@
+# Initial joint positions for the reBot B601-DM in Isaac Sim.
+#
+# These seed the ros2_control TopicBasedSystem state interfaces AND therefore the
+# pose the scaled_joint_trajectory_controller holds on activation. They MUST be a
+# firmly-INTERIOR configuration: joint2 and joint3 have a strict cuMotion limit of
+# (-3.14, 0), so a value of 0.0 sits exactly ON the boundary and the closed-loop
+# physics lets it drift a hair positive (measured +0.0001), which cuMotion rejects
+# as INVALID_INITIAL_CSPACE_POSITION at plan time -- the whole pick then fails to
+# plan even though the grasp is reachable.
+#
+# These match sim/pick_scene.py's START_Q. FK puts the TCP 62 mm above the
+# transfer wall with the gripper rail horizontal. The controller-held pose and
+# scene-seeded pose must agree or activation jumps.
+joint1: -0.6000
+joint2: -0.7500
+joint3: -0.7500
+joint4: 0.0000
+joint5: 0.0000
+joint6: 0.0000

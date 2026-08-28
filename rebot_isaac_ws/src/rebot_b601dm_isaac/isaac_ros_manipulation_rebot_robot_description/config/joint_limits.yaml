@@ -1,0 +1,78 @@
+# MoveIt joint limits for the reBot B601-DM.
+#
+# Positions and velocities are transcribed from
+# rebot_b601dm_description/urdf/rebot_b601dm_arm.xacro and
+# rebot_b601dm_description/urdf/rebot_b601dm_gripper.xacro. cuMotion reads limits
+# from the URDF rather than from this file, so the two must agree or the planner
+# and MoveIt will disagree about what is reachable.
+#
+# Accelerations are NOT from the robot: 2.0 rad/s^2 is the value the Flexiv and UR
+# reference configs use, kept here so trajectories are time-parameterizable. No
+# measured acceleration limit exists for this arm.
+joint_limits:
+  joint1:
+    has_position_limits: true
+    min_position: -2.8
+    max_position: 2.8
+    has_velocity_limits: true
+    max_velocity: 5.0
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  joint2:
+    has_position_limits: true
+    min_position: -3.14
+    max_position: 0.0
+    has_velocity_limits: true
+    max_velocity: 5.0
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  joint3:
+    has_position_limits: true
+    min_position: -3.14
+    max_position: 0.0
+    has_velocity_limits: true
+    max_velocity: 5.0
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  joint4:
+    has_position_limits: true
+    min_position: -1.87
+    max_position: 1.57
+    has_velocity_limits: true
+    max_velocity: 3.0
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  joint5:
+    has_position_limits: true
+    min_position: -1.57
+    max_position: 1.57
+    has_velocity_limits: true
+    max_velocity: 3.0
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  joint6:
+    has_position_limits: true
+    min_position: -3.14
+    max_position: 3.14
+    has_velocity_limits: true
+    max_velocity: 3.0
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  # Jaw travel is in METRES, 0.0 closed to 0.0715 open, 0.2 m/s. The reference
+  # configs list arm joints only; the jaws are included here so the gripper group
+  # has limits without falling back to the URDF, but no jaw acceleration limit is
+  # published by the vendor so none is asserted.
+  gripper_joint1:
+    has_position_limits: true
+    min_position: 0.0
+    max_position: 0.0715
+    has_velocity_limits: true
+    max_velocity: 0.2
+    has_acceleration_limits: false
+  gripper_joint2:
+    has_position_limits: true
+    min_position: 0.0
+    max_position: 0.0715
+    has_velocity_limits: true
+    max_velocity: 0.2
+    has_acceleration_limits: false

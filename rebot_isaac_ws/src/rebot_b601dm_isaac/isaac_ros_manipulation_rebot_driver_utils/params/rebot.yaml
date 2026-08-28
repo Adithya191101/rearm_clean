@@ -1,0 +1,10 @@
+# Default parameters for the reBot B601-DM with parallel-jaw gripper
+robot_type: REBOT
+gripper_type: rebot_parallel
+
+urdf_path: $(ros2 pkg prefix --share isaac_ros_manipulation_rebot_robot_description)/urdf/rebot_sim.urdf.xacro
+srdf_path: $(ros2 pkg prefix --share isaac_ros_manipulation_rebot_robot_description)/srdf/rebot.srdf.xacro
+joint_limits_file_path: $(ros2 pkg prefix --share isaac_ros_manipulation_rebot_robot_description)/config/joint_limits.yaml
+kinematics_file_path: $(ros2 pkg prefix --share isaac_ros_manipulation_rebot_robot_description)/config/kinematics_sim.yaml
+moveit_controllers_file_path: $(ros2 pkg prefix --share isaac_ros_manipulation_rebot_robot_description)/config/moveit_sim_controllers.yaml
+ros2_controllers_file_path: $(ros2 pkg prefix --share isaac_ros_manipulation_rebot_robot_description)/config/ros2_control_controllers_sim.yaml

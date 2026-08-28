@@ -1,0 +1,28 @@
+trajectory_execution:
+  execution_duration_monitoring: False
+  allowed_execution_duration_scaling: 1.2
+  allowed_goal_duration_margin: 0.5
+  allowed_start_tolerance: 0.1  # Bigger tolerance since Isaac sim at 500 hz needs this.
+
+moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
+
+moveit_simple_controller_manager:
+  controller_names:
+    - scaled_joint_trajectory_controller
+
+  # Named scaled_joint_trajectory_controller, matching both reference packages,
+  # because that string is hardcoded in the shared test harness
+  # (isaac_ros_manipulation_ros_python_utils/test_utils.py) and in the gear
+  # assembly orchestrator. The controller TYPE is the plain
+  # joint_trajectory_controller/JointTrajectoryController; only the name is shared.
+  scaled_joint_trajectory_controller:
+    action_ns: follow_joint_trajectory
+    type: FollowJointTrajectory
+    default: true
+    joints:
+      - joint1
+      - joint2
+      - joint3
+      - joint4
+      - joint5
+      - joint6

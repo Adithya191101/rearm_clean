@@ -1,0 +1,81 @@
+<?xml version="1.0"?>
+<!--
+  Wrist-mounted camera frames.
+
+  The extrinsic differs by profile and is loaded from a YAML artifact rather than
+  hard-coded, because the two profiles obtain it in fundamentally different ways:
+
+    sim  (config/extrinsics_sim.yaml)  — CHOSEN. We author the mount pose and
+         place the Isaac Sim camera prim at exactly the same transform, so it is
+         exact by construction. No measurement is involved and no error exists.
+
+    real (config/extrinsics_real.yaml) — MEASURED by hand-eye calibration
+         (Stage 6). That procedure solves for the OPTICAL frame, not the
+         mechanical mount, so camera_mount is back-computed from camera_link
+         through the fixed T_mount_camera_link. The two are recorded as separate
+         numbers for that reason.
+
+  Frame chain:
+    link6 -[T_link6_camera_mount]-> camera_mount
+          -[T_mount_camera_link]-> camera_link  (body frame, REP 103: X fwd)
+          -[rpy -pi/2, 0, -pi/2]-> camera_*_optical_frame  (REP 145: Z fwd)
+
+  The optical rotation is fixed by REP 145 and is never a tunable.
+
+  Any change to the extrinsic invalidates the USD camera prim and the XRDF
+  collision spheres covering the mount. Update all three artifacts together.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- REP 145 optical frame rotation: body (X fwd, Y left, Z up)
+       -> optical (Z fwd, X right, Y down). -->
+  <xacro:property name="optical_roll"  value="-1.5707963267948966"/>
+  <xacro:property name="optical_pitch" value="0.0"/>
+  <xacro:property name="optical_yaw"   value="-1.5707963267948966"/>
+
+  <xacro:macro name="rebot_b601dm_camera"
+               params="prefix
+                       mount_xyz mount_rpy
+                       cam_xyz:='0 0 0' cam_rpy:='0 0 0'
+                       name:='camera'">
+
+    <!-- Mechanical mount on the wrist. Massless frame; the physical bracket's
+         collision volume is represented in the XRDF spheres, not here. -->
+    <link name="${prefix}camera_mount"/>
+    <joint name="${prefix}camera_mount_joint" type="fixed">
+      <origin xyz="${mount_xyz}" rpy="${mount_rpy}"/>
+      <parent link="${prefix}link6"/>
+      <child  link="${prefix}camera_mount"/>
+    </joint>
+
+    <!-- Camera body frame. Identity w.r.t. the mount in the sim profile; the
+         hand-eye result makes it non-identity on real hardware. -->
+    <link name="${prefix}${name}_link"/>
+    <joint name="${prefix}${name}_link_joint" type="fixed">
+      <origin xyz="${cam_xyz}" rpy="${cam_rpy}"/>
+      <parent link="${prefix}camera_mount"/>
+      <child  link="${prefix}${name}_link"/>
+    </joint>
+
+    <!-- Colour optical frame: the parent of CameraInfo and of every published
+         pose from FoundationPose. -->
+    <link name="${prefix}${name}_color_optical_frame"/>
+    <joint name="${prefix}${name}_color_optical_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="${optical_roll} ${optical_pitch} ${optical_yaw}"/>
+      <parent link="${prefix}${name}_link"/>
+      <child  link="${prefix}${name}_color_optical_frame"/>
+    </joint>
+
+    <!-- Depth optical frame. Coincident with colour because both the sim camera
+         and a D435 in aligned-depth mode register depth into the colour frame.
+         Kept as a distinct frame so consumers that ask for the depth parent get a
+         valid answer instead of a TF lookup failure. -->
+    <link name="${prefix}${name}_depth_optical_frame"/>
+    <joint name="${prefix}${name}_depth_optical_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <parent link="${prefix}${name}_color_optical_frame"/>
+      <child  link="${prefix}${name}_depth_optical_frame"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

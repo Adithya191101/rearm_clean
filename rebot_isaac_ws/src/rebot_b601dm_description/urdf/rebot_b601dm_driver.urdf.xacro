@@ -1,0 +1,88 @@
+<?xml version="1.0"?>
+<!--
+  PRODUCT 2 of 2: the SDK DRIVER model.
+  Consumer: the Seeed reBotArm_control_py SDK, via
+            rebotarm_hardware_canonical.yaml -> urdf_path.
+
+  ==========================================================================
+  WHY THIS PRODUCT EXISTS AT ALL
+  ==========================================================================
+  robot_model.py loads this URDF with pin.buildModelFromUrdf() and reports
+  get_joint_count() as model.nq. The SDK's whole API — command vectors, IK
+  seeds, FK queries — is built on that count being exactly 6.
+
+  Adding the gripper's prismatic jaws would make nq == 8 and break that
+  contract silently: the SDK would accept 6-vectors and interpret them against
+  an 8-DoF model. So this product carries NO actuated gripper joints. Fixed
+  joints are fine — Pinocchio does not count them — which is what lets
+  end_link exist below without changing nq.
+
+  ==========================================================================
+  end_link: A POSE-EQUIVALENT ALIAS OF gripper_tcp
+  ==========================================================================
+  Seeed's rebotarm_hardware.yaml sets end_effector_frame: end_link, and that
+  string is baked through the SDK, so the frame must keep the name. But upstream's
+  end_link (from the fixend URDF) is NOT where we plan to:
+
+      legacy end_link vs canonical gripper_tcp:  44.296 mm AND 180 deg about X
+
+  Rather than teach every consumer about that offset, this model places end_link
+  coincident with gripper_tcp in position AND orientation, by composing exactly
+  the same two fixed transforms the full model uses:
+
+      T_link6_end_link = T_link6_gripper_link . T_gripper_link_tcp
+                       = [xyz=(0,0,0.15971), rpy=(0,-1.5708,0)]
+                       . [xyz=(-0.0443,0,0),  rpy=(0,0,0)]
+
+  Composing the same primitives — rather than hard-coding the product — is
+  deliberate: a hard-coded origin would silently diverge the moment the wrist
+  geometry is corrected in one place. The Stage 2 parity test asserts the
+  resulting driver-end_link pose equals full-model gripper_tcp to < 1e-6 m and
+  < 1e-6 rad over 1000 sampled configurations.
+
+  Note this is NOT the 4 um wrist question. That one (with-gripper gripper_link
+  vs fixend end_link) is a non-issue. This is the separate 44.3 mm one, and it is
+  real. See docs/KDR-001-kinematic-frames.md.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="rebot_b601dm_driver">
+
+  <xacro:arg name="prefix"       default=""/>
+  <xacro:arg name="mesh_package" default="rebot_b601dm_description"/>
+
+  <xacro:include filename="$(find rebot_b601dm_description)/urdf/rebot_b601dm_arm.xacro"/>
+
+  <xacro:rebot_b601dm_arm prefix="$(arg prefix)" mesh_package="$(arg mesh_package)"/>
+
+  <!--
+    Intermediate frame carrying the gripper-body transform. Present so the chain
+    is built from the same two primitives as the full model instead of a
+    pre-multiplied constant. Fixed joints do not contribute to nq.
+  -->
+  <link name="$(arg prefix)gripper_link"/>
+  <joint name="$(arg prefix)gripper_joint" type="fixed">
+    <origin xyz="0 0 0.15971" rpy="0 -1.5708 0"/>
+    <parent link="$(arg prefix)link6"/>
+    <child  link="$(arg prefix)gripper_link"/>
+  </joint>
+
+  <!-- The SDK's end_effector_frame. Pose-identical to the full model's
+       gripper_tcp by construction. -->
+  <link name="$(arg prefix)end_link"/>
+  <joint name="$(arg prefix)end_joint" type="fixed">
+    <origin xyz="-0.0443 0 0" rpy="0 0 0"/>
+    <parent link="$(arg prefix)gripper_link"/>
+    <child  link="$(arg prefix)end_link"/>
+  </joint>
+
+  <!--
+    gripper_tcp is also exposed here, coincident with end_link, so code written
+    against the canonical name resolves in both models. Again fixed, so nq == 6.
+  -->
+  <link name="$(arg prefix)gripper_tcp"/>
+  <joint name="$(arg prefix)gripper_tcp_joint" type="fixed">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <parent link="$(arg prefix)end_link"/>
+    <child  link="$(arg prefix)gripper_tcp"/>
+  </joint>
+
+</robot>

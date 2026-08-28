@@ -1,0 +1,70 @@
+# Wrist camera extrinsics -- REAL HARDWARE profile.
+#
+# ############################################################################
+# ## NOT YET CALIBRATED. The values below are the sim placeholders.          ##
+# ## Do not run real perception against this file.                           ##
+# ############################################################################
+#
+# calibrated: false  <- flipped to true by the Stage 6 calibration tool, which
+# also fills in solved_on/residuals. Launch profiles for the real camera refuse
+# to start while this is false, so a placeholder extrinsic cannot silently become
+# the operating one.
+#
+# HOW THIS FILE GETS ITS VALUES (Stage 6):
+#   Hand-eye calibration, NVIDIA's multi-pose procedure: roughly 10 distinct
+#   wrist rotations across at least 2 translations, observing a fixed target.
+#   A single AprilTag view is a validation datum, not a solution -- one view
+#   cannot separate the mount rotation from the target pose.
+#
+#   The solve returns the OPTICAL/body frame (camera_link). camera_mount is then
+#   back-computed as  T_link6_camera_mount = T_link6_camera_link . inv(T_mount_camera_link)
+#   using the bracket's known mechanical offset. Recording both separately keeps
+#   "what we measured" distinct from "what we inferred".
+#
+# SEQUENCING (this order is not optional):
+#   1. AFTER Stage 8's canonical driver model and FK parity are validated.
+#      Hand-eye solves for a transform between two frames it must be able to
+#      locate; if FK is wrong, the calibration absorbs the FK error and looks
+#      like it converged.
+#   2. BEFORE real segmentation and mapping. The robot segmenter uses this
+#      extrinsic to decide which depth pixels are the arm. A wrong mount pose
+#      makes it carve out the wrong region, and the nvblox ESDF is then poisoned
+#      with arm voxels that no amount of re-observation clears.
+#
+# Any change here invalidates the URDF and XRDF spheres. The real profile remains
+# intentionally unavailable until physical hand-eye calibration is complete.
+
+profile: real
+calibrated: false
+solved_on: null          # ISO-8601 date the hand-eye solve was run
+solver: null             # e.g. "isaac_ros_hand_eye_calibration"
+num_poses: null          # how many wrist poses fed the solve
+residual_rms_mm: null    # reprojection residual; reject the solve above ~2 mm
+residual_rms_deg: null
+
+# T_link6_camera_mount -- INFERRED from camera_link below, not measured.
+camera_mount:
+  parent: link6
+  child: camera_mount
+  xyz: [0.05, 0.0, 0.06]
+  rpy: [0.0, 0.0, 0.0]
+
+# T_mount_camera_link -- on real hardware this carries the measured bracket-face
+# to D435-body offset. Placeholder identity until calibrated.
+camera_link:
+  parent: camera_mount
+  child: camera_link
+  xyz: [0.0, 0.0, 0.0]
+  rpy: [0.0, 0.0, 0.0]
+
+optical_frame_rpy: [-1.5707963267948966, 0.0, -1.5707963267948966]
+
+# Real intrinsics come from the camera itself: use the values published on
+# /camera/color/camera_info by realsense2_camera (factory calibration), not these.
+# Kept only so the file shape matches extrinsics_sim.yaml.
+intrinsics:
+  width: 1280
+  height: 720
+  fps: 30
+  source: camera_info    # authoritative at run time
+  optical_frame: camera_color_optical_frame

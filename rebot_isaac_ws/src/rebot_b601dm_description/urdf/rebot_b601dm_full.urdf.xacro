@@ -1,0 +1,49 @@
+<?xml version="1.0"?>
+<!--
+  PRODUCT 1 of 2: the FULL planning model.
+  Consumers: MoveIt, cuMotion, robot_state_publisher, nvblox robot segmenter,
+             the Isaac Sim USD import.
+
+  Contains the arm, the parallel-jaw gripper (2 prismatic joints, one mimicking
+  the other), gripper_tcp, and the wrist camera frames.
+
+  Generate with:
+    xacro rebot_b601dm_full.urdf.xacro \
+      extrinsics_file:=<ws>/config/extrinsics_sim.yaml > rebot_b601dm_full.urdf
+
+  The companion driver product (rebot_b601dm_driver.urdf.xacro) shares the arm
+  and wrist macros so the two cannot drift apart — that shared-source property
+  is what makes the Stage 2 cross-model FK parity test meaningful rather than
+  circular.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="rebot_b601dm">
+
+  <xacro:arg name="prefix"       default=""/>
+  <xacro:arg name="mesh_package" default="rebot_b601dm_description"/>
+
+  <!-- Camera extrinsic. Defaults are the SIM values, which are chosen rather
+       than measured (see config/extrinsics_sim.yaml). The real profile passes
+       the hand-eye result from config/extrinsics_real.yaml. -->
+  <xacro:arg name="camera_mount_xyz" default="0.05 0 0.06"/>
+  <xacro:arg name="camera_mount_rpy" default="0 0 0"/>
+  <xacro:arg name="camera_link_xyz"  default="0 0 0"/>
+  <xacro:arg name="camera_link_rpy"  default="0 0 0"/>
+  <xacro:arg name="use_camera"       default="true"/>
+
+  <xacro:include filename="$(find rebot_b601dm_description)/urdf/rebot_b601dm_arm.xacro"/>
+  <xacro:include filename="$(find rebot_b601dm_description)/urdf/rebot_b601dm_gripper.xacro"/>
+  <xacro:include filename="$(find rebot_b601dm_description)/urdf/rebot_b601dm_camera.xacro"/>
+
+  <xacro:rebot_b601dm_arm     prefix="$(arg prefix)" mesh_package="$(arg mesh_package)"/>
+  <xacro:rebot_b601dm_gripper prefix="$(arg prefix)" mesh_package="$(arg mesh_package)"/>
+
+  <xacro:if value="$(arg use_camera)">
+    <xacro:rebot_b601dm_camera prefix="$(arg prefix)"
+                               mount_xyz="$(arg camera_mount_xyz)"
+                               mount_rpy="$(arg camera_mount_rpy)"
+                               cam_xyz="$(arg camera_link_xyz)"
+                               cam_rpy="$(arg camera_link_rpy)"
+                               name="camera"/>
+  </xacro:if>
+
+</robot>

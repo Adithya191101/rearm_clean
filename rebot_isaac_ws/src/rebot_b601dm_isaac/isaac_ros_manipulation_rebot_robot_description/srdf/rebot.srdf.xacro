@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="rebot_b601dm">
+
+  <!-- reBot arm planning group. The tip is gripper_tcp, not gripper_link: grasps
+       are authored against the TCP, which sits 44.3 mm along gripper_link -X
+       between the jaws. Planning to gripper_link would put the tool centre
+       44.3 mm inside the object. -->
+  <group name="rebot_arm">
+    <chain base_link="base_link" tip_link="gripper_tcp" />
+  </group>
+
+  <!-- Parallel-jaw gripper group. Both prismatic joints are listed even though
+       gripper_joint2 <mimic>s gripper_joint1, so the group covers every jaw
+       variable MoveIt has to write. -->
+  <group name="rebot_gripper">
+    <joint name="gripper_joint1" />
+    <joint name="gripper_joint2" />
+  </group>
+
+  <!-- Jaw travel is in METRES: 0.0 is fully closed, 0.0715 fully open. Both
+       joints carry the same value because the mimic multiplier is +1.0 with a
+       zero offset. -->
+  <group_state name="open" group="rebot_gripper">
+    <joint name="gripper_joint1" value="0.0715" />
+    <joint name="gripper_joint2" value="0.0715" />
+  </group_state>
+
+  <group_state name="closed" group="rebot_gripper">
+    <joint name="gripper_joint1" value="0.0" />
+    <joint name="gripper_joint2" value="0.0" />
+  </group_state>
+
+  <end_effector name="rebot_gripper" parent_link="gripper_link" group="rebot_gripper" />
+
+  <!-- Home state. All zeros is inside every joint's limits: joint2 and joint3 are
+       [-3.14, 0] so 0 is the upper bound, which is reachable but on the limit. -->
+  <group_state name="home" group="rebot_arm">
+    <joint name="joint1" value="0" />
+    <joint name="joint2" value="0" />
+    <joint name="joint3" value="0" />
+    <joint name="joint4" value="0" />
+    <joint name="joint5" value="0" />
+    <joint name="joint6" value="0" />
+  </group_state>
+
+  <!-- gripper_joint2 is driven entirely by the <mimic> on gripper_joint1, so it is
+       not an independently planned variable. -->
+  <passive_joint name="gripper_joint2" />
+
+  <!-- Adjacent-link collision pairs. Only genuinely adjacent pairs are disabled
+       here; the "Never" pairs that MoveIt Setup Assistant normally adds for
+       non-neighbouring links are deliberately absent because deriving them
+       requires sampling the real collision meshes, which has not been done for
+       this robot. Their absence is conservative (extra checks, not fewer). -->
+  <disable_collisions link1="base_link" link2="link1" reason="Adjacent" />
+  <disable_collisions link1="link1" link2="link2" reason="Adjacent" />
+  <disable_collisions link1="link2" link2="link3" reason="Adjacent" />
+  <disable_collisions link1="link3" link2="link4" reason="Adjacent" />
+  <disable_collisions link1="link4" link2="link5" reason="Adjacent" />
+  <disable_collisions link1="link5" link2="link6" reason="Adjacent" />
+  <disable_collisions link1="link6" link2="gripper_link" reason="Adjacent" />
+  <disable_collisions link1="gripper_link" link2="gripper_left" reason="Adjacent" />
+  <disable_collisions link1="gripper_link" link2="gripper_right" reason="Adjacent" />
+
+  <!-- The jaws are siblings, not neighbours, but they cannot collide: a single
+       motor drives them symmetrically through the mimic, and the lower limit of
+       0.0 is the fully-closed pose. -->
+  <disable_collisions link1="gripper_left" link2="gripper_right" reason="Never" />
+
+</robot>

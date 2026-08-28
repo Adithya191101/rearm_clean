@@ -1,0 +1,4 @@
+# TensorRT engines are generated for the local GPU and are not checksum-stable.
+rebot_isaac_ws/isaac_ros_assets/models/foundationpose/refine_trt_engine.plan
+rebot_isaac_ws/isaac_ros_assets/models/foundationpose/score_trt_engine.plan
+rebot_isaac_ws/isaac_ros_assets/models/grounding_dino/grounding_dino_model.plan
